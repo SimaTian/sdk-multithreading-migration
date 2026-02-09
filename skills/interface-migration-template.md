@@ -55,7 +55,7 @@ public class TheTask : TaskBase, IMultiThreadableTask
 }
 ```
 
-Replace forbidden APIs:
+Replace forbidden APIs **directly** — do NOT null-check `TaskEnvironment`. MSBuild always provides a `TaskEnvironment` instance to `IMultiThreadableTask` implementations, even in single-threaded mode (where it acts as a no-op passthrough):
 - `Path.GetFullPath(x)` → `TaskEnvironment.GetAbsolutePath(x)` (add `.GetCanonicalForm()` if canonicalization was the intent)
 - `File.Exists(relativePath)` → `File.Exists(TaskEnvironment.GetAbsolutePath(relativePath))`
 - `new FileStream(path, ...)` → absolutize `path` first

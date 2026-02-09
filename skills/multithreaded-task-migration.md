@@ -102,6 +102,8 @@ public class MyTask : TaskBase, IMultiThreadableTask
 }
 ```
 
+**Important**: Do NOT null-check `TaskEnvironment`. MSBuild always provides a `TaskEnvironment` instance to tasks implementing `IMultiThreadableTask` — even in single-threaded mode (where it acts as a no-op passthrough). Use `TaskEnvironment` directly.
+
 ## Forbidden API Reference
 
 ### Must Replace with TaskEnvironment:
@@ -215,6 +217,8 @@ dotnet test src/Tasks/Microsoft.NET.Build.Tasks.UnitTests/Microsoft.NET.Build.Ta
 - `TaskBase` is in namespace `Microsoft.NET.Build.Tasks`, polyfills go in `Microsoft.Build.Framework`
 - Tests use `MockBuildEngine` (IBuildEngine4) — set `task.BuildEngine = new MockBuildEngine()`
 - Always set `task.TaskEnvironment = TaskEnvironmentHelper.CreateForTest()` in tests for migrated tasks
+- **Do NOT null-check `TaskEnvironment`** — MSBuild always provides it to `IMultiThreadableTask` implementations, even in single-threaded mode (where it acts as a passthrough). Use `TaskEnvironment` directly without guards.
 - Trace ALL path strings through helper methods to catch indirect file API usage
 - `GetAbsolutePath()` throws on null/empty — handle in batch operations
+- The real MSBuild `AbsolutePath` requires fully-qualified paths (with drive letter on Windows). Test paths must be fully qualified — use `Path.GetFullPath()` on synthetic test paths before passing to `TaskEnvironmentHelper.CreateForTest()`.
 - For `Path.GetFullPath()` used for canonicalization, use `TaskEnvironment.GetAbsolutePath(path).GetCanonicalForm()`

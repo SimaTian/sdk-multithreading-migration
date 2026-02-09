@@ -6,30 +6,31 @@ After migrating a task to `IMultiThreadableTask`, run stress tests to verify the
 
 ## Key Findings from ResolvePackageDependencies Migration
 
-### 1. TaskEnvironment null-safety is mandatory
+### 1. TaskEnvironment is always provided — do NOT null-check
 
-MSBuild only sets `TaskEnvironment` when running in multithreaded mode. In single-threaded mode it's `null`. Every migrated method that uses `TaskEnvironment` must have a null-check fallback to the original behavior:
+MSBuild always provides a `TaskEnvironment` instance to tasks implementing `IMultiThreadableTask` — even in single-threaded mode (where it acts as a no-op passthrough). Use `TaskEnvironment` directly without null guards:
 
 ```csharp
 private string GetAbsolutePathFromProjectRelativePath(string path)
 {
-    string projectDir = Path.GetDirectoryName(ProjectPath);
-    if (TaskEnvironment != null)
-    {
-        AbsolutePath absProjectDir = TaskEnvironment.GetAbsolutePath(projectDir);
-        return Path.GetFullPath(Path.Combine(absProjectDir, path));
-    }
-    return Path.GetFullPath(Path.Combine(projectDir, path));
+    AbsolutePath absProjectDir = TaskEnvironment.GetAbsolutePath(Path.GetDirectoryName(ProjectPath));
+    return Path.GetFullPath(Path.Combine(absProjectDir, path));
 }
 ```
 
-**Without this**: existing tests and single-threaded builds will crash with `NullReferenceException`.
+**Tests must always set `TaskEnvironment`** — use `TaskEnvironmentHelper.CreateForTest(projectDir)` for every test of a migrated task.
 
 ### 2. Absolute paths pass through GetAbsolutePath unchanged
 
 `TaskEnvironment.GetAbsolutePath()` checks `Path.IsPathRooted()` — if the path is already absolute, it returns it as-is. This means:
 - When `ProjectPath` is absolute (the normal case), `Path.GetDirectoryName(ProjectPath)` is already absolute, so `GetAbsolutePath` is a no-op for path resolution — but it's still required for the contract.
 - The real value of `GetAbsolutePath` shows when `ProjectPath` is relative (edge case but possible).
+
+### 3. AbsolutePath requires fully-qualified paths (with drive letter on Windows)
+
+The real MSBuild `AbsolutePath` struct (used in net11.0+) validates that paths are fully qualified — not just rooted. On Windows, `\root\foo` is rooted but NOT fully qualified (missing drive letter like `C:\`). This means:
+- Test paths must use `Path.GetFullPath()` to ensure they have a drive letter before passing to `TaskEnvironmentHelper.CreateForTest()`.
+- Synthetic paths like `\root\anypath\...` will throw `ArgumentException: Path must be rooted` from `AbsolutePath` even though `Path.IsPathRooted()` returns true for them.
 
 ### 3. Instance state is per-task-instance (safe by design)
 
@@ -89,9 +90,9 @@ Temp/rpd-stress-<guid1>/proj0/myproject.csproj  →  ../ClassLib = Temp/rpd-stre
 Temp/rpd-stress-<guid2>/proj1/myproject.csproj  →  ../ClassLib = Temp/rpd-stress-<guid2>/ClassLib
 ```
 
-### Pattern 3: Mixed null/non-null TaskEnvironment
+### Pattern 3: All tasks always have TaskEnvironment set
 
-Half the tasks use `TaskEnvironment`, half don't. Verifies the null-check fallback path works correctly under concurrent access and doesn't interfere with the `TaskEnvironment` path.
+MSBuild always provides `TaskEnvironment` to `IMultiThreadableTask` implementations. Verify N concurrent tasks all work correctly with `TaskEnvironment` always set, each pointing to a distinct project directory.
 
 ### Pattern 4: Shared LockFile object
 
@@ -159,7 +160,7 @@ task.TaskEnvironment = TaskEnvironmentHelper.CreateForTest(projectDir);
 - [ ] Identify what input properties trigger those code paths (e.g., project-type libraries for `ResolvePackageDependencies`)
 - [ ] Write concurrent execution test with `Parallel.For` + `Barrier`
 - [ ] Write same-data-different-dirs test to prove path isolation
-- [ ] Write mixed null/non-null `TaskEnvironment` test
+- [ ] Write concurrent test where all tasks have `TaskEnvironment` set (mimicking real MSBuild)
 - [ ] Write relative `ProjectPath` (or equivalent input) test
 - [ ] Verify CWD is not modified during execution
 - [ ] Run with high parallelism (64+ threads) to surface race conditions
