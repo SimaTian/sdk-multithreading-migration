@@ -1,0 +1,754 @@
+{
+  "description": "Maps original broken tasks to disguised pipeline test tasks",
+  "generatedAt": "2025-01-01T00:00:00Z",
+  "totalTasks": 46,
+  "categories": [
+    "Analysis",
+    "Build",
+    "Compilation",
+    "Compatibility",
+    "Configuration",
+    "Diagnostics",
+    "Packaging",
+    "Resources",
+    "Tools"
+  ],
+  "tasks": [
+    {
+      "original": {
+        "file": "PathViolations/RelativePathToFileExists.cs",
+        "className": "RelativePathToFileExists",
+        "namespace": "UnsafeThreadSafeTasks.PathViolations",
+        "category": "PathViolations"
+      },
+      "disguised": {
+        "file": "Build/FileExistenceChecker.cs",
+        "className": "FileExistenceChecker",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Uses relative path with File.Exists without TaskEnvironment resolution",
+      "renamingGuidance": "Rename path-related variables to generic names like 'targetFilePath', 'outputFile'. Remove any comments referencing relative paths."
+    },
+    {
+      "original": {
+        "file": "PathViolations/RelativePathToDirectoryExists.cs",
+        "className": "RelativePathToDirectoryExists",
+        "namespace": "UnsafeThreadSafeTasks.PathViolations",
+        "category": "PathViolations"
+      },
+      "disguised": {
+        "file": "Build/OutputDirectoryValidator.cs",
+        "className": "OutputDirectoryValidator",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Uses relative path with Directory.Exists without TaskEnvironment resolution",
+      "renamingGuidance": "Rename directory variables to 'outputDir', 'targetDirectory'. Rename method params to match build output validation semantics."
+    },
+    {
+      "original": {
+        "file": "PathViolations/RelativePathToFileStream.cs",
+        "className": "RelativePathToFileStream",
+        "namespace": "UnsafeThreadSafeTasks.PathViolations",
+        "category": "PathViolations"
+      },
+      "disguised": {
+        "file": "Resources/BinaryContentWriter.cs",
+        "className": "BinaryContentWriter",
+        "namespace": "SdkTasks.Resources",
+        "category": "Resources"
+      },
+      "violationType": "Opens FileStream with relative path without TaskEnvironment resolution",
+      "renamingGuidance": "Rename stream variables to 'contentStream', 'resourceStream'. Rename file path params to 'resourceFile', 'embeddedResource'."
+    },
+    {
+      "original": {
+        "file": "PathViolations/RelativePathToXDocument.cs",
+        "className": "RelativePathToXDocument",
+        "namespace": "UnsafeThreadSafeTasks.PathViolations",
+        "category": "PathViolations"
+      },
+      "disguised": {
+        "file": "Compilation/ProjectConfigReader.cs",
+        "className": "ProjectConfigReader",
+        "namespace": "SdkTasks.Compilation",
+        "category": "Compilation"
+      },
+      "violationType": "Loads XDocument with relative path without TaskEnvironment resolution",
+      "renamingGuidance": "Rename XML-related variables to 'projectConfig', 'configDocument'. Rename path params to 'configFilePath', 'projectFile'."
+    },
+    {
+      "original": {
+        "file": "PathViolations/UsesPathGetFullPath_AttributeOnly.cs",
+        "className": "UsesPathGetFullPath_AttributeOnly",
+        "namespace": "UnsafeThreadSafeTasks.PathViolations",
+        "category": "PathViolations"
+      },
+      "disguised": {
+        "file": "Build/PathNormalizer.cs",
+        "className": "PathNormalizer",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Has RunsInSTAThread attribute but still uses Path.GetFullPath directly",
+      "renamingGuidance": "Rename path variables to 'normalizedPath', 'resolvedInput'. Remove underscores from identifiers."
+    },
+    {
+      "original": {
+        "file": "PathViolations/UsesPathGetFullPath_IgnoresTaskEnv.cs",
+        "className": "UsesPathGetFullPath_IgnoresTaskEnv",
+        "namespace": "UnsafeThreadSafeTasks.PathViolations",
+        "category": "PathViolations"
+      },
+      "disguised": {
+        "file": "Compilation/SourceFileResolver.cs",
+        "className": "SourceFileResolver",
+        "namespace": "SdkTasks.Compilation",
+        "category": "Compilation"
+      },
+      "violationType": "Has TaskEnvironment available but ignores it, using Path.GetFullPath instead",
+      "renamingGuidance": "Rename variables to 'sourceFile', 'resolvedSource'. Remove references to 'TaskEnv' in any comments or variable names."
+    },
+    {
+      "original": {
+        "file": "PathViolations/UsesPathGetFullPath_ForCanonicalization.cs",
+        "className": "UsesPathGetFullPath_ForCanonicalization",
+        "namespace": "UnsafeThreadSafeTasks.PathViolations",
+        "category": "PathViolations"
+      },
+      "disguised": {
+        "file": "Build/PathCanonicalizationTask.cs",
+        "className": "PathCanonicalizationTask",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Uses Path.GetFullPath for canonicalization instead of TaskEnvironment.GetFullPath",
+      "renamingGuidance": "Rename to 'canonicalPath', 'cleanPath'. Simplify method names to remove 'Canonicalization' prefix references."
+    },
+    {
+      "original": {
+        "file": "EnvironmentViolations/UsesEnvironmentGetVariable.cs",
+        "className": "UsesEnvironmentGetVariable",
+        "namespace": "UnsafeThreadSafeTasks.EnvironmentViolations",
+        "category": "EnvironmentViolations"
+      },
+      "disguised": {
+        "file": "Configuration/EnvironmentConfigReader.cs",
+        "className": "EnvironmentConfigReader",
+        "namespace": "SdkTasks.Configuration",
+        "category": "Configuration"
+      },
+      "violationType": "Reads environment variables directly via Environment.GetEnvironmentVariable",
+      "renamingGuidance": "Rename env var references to 'configValue', 'settingValue'. Rename methods to 'ReadConfiguration', 'GetSetting'."
+    },
+    {
+      "original": {
+        "file": "EnvironmentViolations/UsesEnvironmentSetVariable.cs",
+        "className": "UsesEnvironmentSetVariable",
+        "namespace": "UnsafeThreadSafeTasks.EnvironmentViolations",
+        "category": "EnvironmentViolations"
+      },
+      "disguised": {
+        "file": "Configuration/BuildEnvironmentConfigurator.cs",
+        "className": "BuildEnvironmentConfigurator",
+        "namespace": "SdkTasks.Configuration",
+        "category": "Configuration"
+      },
+      "violationType": "Sets environment variables directly via Environment.SetEnvironmentVariable",
+      "renamingGuidance": "Rename to 'configKey', 'configValue'. Rename methods to 'ApplyConfiguration', 'SetBuildOption'."
+    },
+    {
+      "original": {
+        "file": "EnvironmentViolations/ReadsEnvironmentCurrentDirectory.cs",
+        "className": "ReadsEnvironmentCurrentDirectory",
+        "namespace": "UnsafeThreadSafeTasks.EnvironmentViolations",
+        "category": "EnvironmentViolations"
+      },
+      "disguised": {
+        "file": "Build/WorkingDirectoryResolver.cs",
+        "className": "WorkingDirectoryResolver",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Reads Environment.CurrentDirectory directly instead of using TaskEnvironment",
+      "renamingGuidance": "Rename 'currentDir' to 'workingDir', 'baseDirectory'. Remove 'Environment' from local variable names."
+    },
+    {
+      "original": {
+        "file": "EnvironmentViolations/SetsEnvironmentCurrentDirectory.cs",
+        "className": "SetsEnvironmentCurrentDirectory",
+        "namespace": "UnsafeThreadSafeTasks.EnvironmentViolations",
+        "category": "EnvironmentViolations"
+      },
+      "disguised": {
+        "file": "Build/DirectoryContextSwitcher.cs",
+        "className": "DirectoryContextSwitcher",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Sets Environment.CurrentDirectory directly, affecting all threads",
+      "renamingGuidance": "Rename to 'targetContext', 'contextDirectory'. Rename methods to 'SwitchContext', 'SetActiveDirectory'."
+    },
+    {
+      "original": {
+        "file": "ProcessViolations/UsesRawProcessStartInfo.cs",
+        "className": "UsesRawProcessStartInfo",
+        "namespace": "UnsafeThreadSafeTasks.ProcessViolations",
+        "category": "ProcessViolations"
+      },
+      "disguised": {
+        "file": "Tools/ExternalToolRunner.cs",
+        "className": "ExternalToolRunner",
+        "namespace": "SdkTasks.Tools",
+        "category": "Tools"
+      },
+      "violationType": "Creates ProcessStartInfo without using TaskEnvironment for working directory",
+      "renamingGuidance": "Rename process variables to 'toolProcess', 'executionContext'. Rename to 'RunTool', 'InvokeTool'."
+    },
+    {
+      "original": {
+        "file": "ProcessViolations/CallsEnvironmentExit.cs",
+        "className": "CallsEnvironmentExit",
+        "namespace": "UnsafeThreadSafeTasks.ProcessViolations",
+        "category": "ProcessViolations"
+      },
+      "disguised": {
+        "file": "Build/BuildAbortHandler.cs",
+        "className": "BuildAbortHandler",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Calls Environment.Exit which terminates the entire process",
+      "renamingGuidance": "Rename exit-related variables to 'abortReason', 'terminationCode'. Rename methods to 'HandleAbort', 'ProcessFailure'."
+    },
+    {
+      "original": {
+        "file": "ProcessViolations/CallsEnvironmentFailFast.cs",
+        "className": "CallsEnvironmentFailFast",
+        "namespace": "UnsafeThreadSafeTasks.ProcessViolations",
+        "category": "ProcessViolations"
+      },
+      "disguised": {
+        "file": "Build/CriticalErrorHandler.cs",
+        "className": "CriticalErrorHandler",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Calls Environment.FailFast which crashes the process immediately",
+      "renamingGuidance": "Rename to 'errorMessage', 'criticalFailure'. Rename methods to 'HandleCriticalError', 'ReportFatalCondition'."
+    },
+    {
+      "original": {
+        "file": "ProcessViolations/CallsProcessKill.cs",
+        "className": "CallsProcessKill",
+        "namespace": "UnsafeThreadSafeTasks.ProcessViolations",
+        "category": "ProcessViolations"
+      },
+      "disguised": {
+        "file": "Tools/ProcessTerminator.cs",
+        "className": "ProcessTerminator",
+        "namespace": "SdkTasks.Tools",
+        "category": "Tools"
+      },
+      "violationType": "Calls Process.Kill without proper process lifecycle management",
+      "renamingGuidance": "Rename to 'targetProcess', 'processHandle'. Rename methods to 'TerminateProcess', 'CleanupStaleProcess'."
+    },
+    {
+      "original": {
+        "file": "ConsoleViolations/UsesConsoleWriteLine.cs",
+        "className": "UsesConsoleWriteLine",
+        "namespace": "UnsafeThreadSafeTasks.ConsoleViolations",
+        "category": "ConsoleViolations"
+      },
+      "disguised": {
+        "file": "Diagnostics/DiagnosticLogger.cs",
+        "className": "DiagnosticLogger",
+        "namespace": "SdkTasks.Diagnostics",
+        "category": "Diagnostics"
+      },
+      "violationType": "Writes directly to Console.WriteLine instead of using MSBuild logging",
+      "renamingGuidance": "Rename to 'logMessage', 'diagnosticOutput'. Rename methods to 'LogDiagnostic', 'WriteDiagnosticInfo'."
+    },
+    {
+      "original": {
+        "file": "ConsoleViolations/UsesConsoleReadLine.cs",
+        "className": "UsesConsoleReadLine",
+        "namespace": "UnsafeThreadSafeTasks.ConsoleViolations",
+        "category": "ConsoleViolations"
+      },
+      "disguised": {
+        "file": "Diagnostics/UserInputPrompt.cs",
+        "className": "UserInputPrompt",
+        "namespace": "SdkTasks.Diagnostics",
+        "category": "Diagnostics"
+      },
+      "violationType": "Reads from Console.ReadLine which blocks and is not thread-safe in MSBuild",
+      "renamingGuidance": "Rename to 'userResponse', 'promptResult'. Rename methods to 'PromptUser', 'GetUserConfirmation'."
+    },
+    {
+      "original": {
+        "file": "ConsoleViolations/UsesConsoleSetOut.cs",
+        "className": "UsesConsoleSetOut",
+        "namespace": "UnsafeThreadSafeTasks.ConsoleViolations",
+        "category": "ConsoleViolations"
+      },
+      "disguised": {
+        "file": "Diagnostics/OutputRedirector.cs",
+        "className": "OutputRedirector",
+        "namespace": "SdkTasks.Diagnostics",
+        "category": "Diagnostics"
+      },
+      "violationType": "Redirects Console.SetOut which affects all threads globally",
+      "renamingGuidance": "Rename to 'outputWriter', 'redirectTarget'. Rename methods to 'RedirectOutput', 'ConfigureOutputStream'."
+    },
+    {
+      "original": {
+        "file": "MismatchViolations/AttributeOnlyWithForbiddenApis.cs",
+        "className": "AttributeOnlyWithForbiddenApis",
+        "namespace": "UnsafeThreadSafeTasks.MismatchViolations",
+        "category": "MismatchViolations"
+      },
+      "disguised": {
+        "file": "Compatibility/LegacyPathResolver.cs",
+        "className": "LegacyPathResolver",
+        "namespace": "SdkTasks.Compatibility",
+        "category": "Compatibility"
+      },
+      "violationType": "Has thread-safety attribute but uses forbidden APIs internally",
+      "renamingGuidance": "Rename to 'legacyPath', 'resolvedLegacyPath'. Remove references to 'Forbidden' or 'Attribute' in variables."
+    },
+    {
+      "original": {
+        "file": "MismatchViolations/NullChecksTaskEnvironment.cs",
+        "className": "NullChecksTaskEnvironment",
+        "namespace": "UnsafeThreadSafeTasks.MismatchViolations",
+        "category": "MismatchViolations"
+      },
+      "disguised": {
+        "file": "Build/SafePathResolver.cs",
+        "className": "SafePathResolver",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Null-checks TaskEnvironment and falls back to unsafe path resolution",
+      "renamingGuidance": "Rename to 'resolvedPath', 'fallbackPath'. Rename null-check variable to 'pathResolver', 'resolverInstance'."
+    },
+    {
+      "original": {
+        "file": "MismatchViolations/IgnoresTaskEnvironment.cs",
+        "className": "IgnoresTaskEnvironment",
+        "namespace": "UnsafeThreadSafeTasks.MismatchViolations",
+        "category": "MismatchViolations"
+      },
+      "disguised": {
+        "file": "Build/DirectPathResolver.cs",
+        "className": "DirectPathResolver",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Has TaskEnvironment property but ignores it entirely, using direct path APIs",
+      "renamingGuidance": "Rename to 'directPath', 'inputPath'. Remove any variable names containing 'Ignore' or 'TaskEnv'."
+    },
+    {
+      "original": {
+        "file": "SubtleViolations/IndirectPathGetFullPath.cs",
+        "className": "IndirectPathGetFullPath",
+        "namespace": "UnsafeThreadSafeTasks.SubtleViolations",
+        "category": "SubtleViolations"
+      },
+      "disguised": {
+        "file": "Analysis/DependencyPathResolver.cs",
+        "className": "DependencyPathResolver",
+        "namespace": "SdkTasks.Analysis",
+        "category": "Analysis"
+      },
+      "violationType": "Calls Path.GetFullPath indirectly through a helper method",
+      "renamingGuidance": "Rename helper method to 'ResolveDependencyPath'. Rename variables to 'dependencyPath', 'resolvedDependency'."
+    },
+    {
+      "original": {
+        "file": "SubtleViolations/LambdaCapturesCurrentDirectory.cs",
+        "className": "LambdaCapturesCurrentDirectory",
+        "namespace": "UnsafeThreadSafeTasks.SubtleViolations",
+        "category": "SubtleViolations"
+      },
+      "disguised": {
+        "file": "Compilation/BatchItemProcessor.cs",
+        "className": "BatchItemProcessor",
+        "namespace": "SdkTasks.Compilation",
+        "category": "Compilation"
+      },
+      "violationType": "Lambda expression captures Environment.CurrentDirectory at definition time",
+      "renamingGuidance": "Rename lambda to 'processItem', 'itemHandler'. Rename captured vars to 'batchRoot', 'processingBase'."
+    },
+    {
+      "original": {
+        "file": "SubtleViolations/SharedMutableStaticField.cs",
+        "className": "SharedMutableStaticField",
+        "namespace": "UnsafeThreadSafeTasks.SubtleViolations",
+        "category": "SubtleViolations"
+      },
+      "disguised": {
+        "file": "Build/IncrementalBuildTracker.cs",
+        "className": "IncrementalBuildTracker",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Uses shared mutable static field that causes race conditions across task instances",
+      "renamingGuidance": "Rename static field to 's_buildState' or '_trackerCache'. Rename methods to 'TrackBuildItem', 'GetBuildStatus'."
+    },
+    {
+      "original": {
+        "file": "SubtleViolations/PartialMigration.cs",
+        "className": "PartialMigration",
+        "namespace": "UnsafeThreadSafeTasks.SubtleViolations",
+        "category": "SubtleViolations"
+      },
+      "disguised": {
+        "file": "Build/DualPathResolver.cs",
+        "className": "DualPathResolver",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Partially migrated - some paths use TaskEnvironment, others still use direct APIs",
+      "renamingGuidance": "Rename to 'primaryPath', 'secondaryPath'. Rename methods to 'ResolvePrimaryPath', 'ResolveSecondaryPath'."
+    },
+    {
+      "original": {
+        "file": "SubtleViolations/DoubleResolvesPath.cs",
+        "className": "DoubleResolvesPath",
+        "namespace": "UnsafeThreadSafeTasks.SubtleViolations",
+        "category": "SubtleViolations"
+      },
+      "disguised": {
+        "file": "Build/CanonicalPathBuilder.cs",
+        "className": "CanonicalPathBuilder",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Resolves path twice - once via TaskEnvironment and once via Path.GetFullPath",
+      "renamingGuidance": "Rename to 'canonicalPath', 'normalizedOutput'. Rename methods to 'BuildCanonicalPath', 'NormalizePath'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/DeepCallChainPathResolve.cs",
+        "className": "DeepCallChainPathResolve",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Compilation/InputFileProcessor.cs",
+        "className": "InputFileProcessor",
+        "namespace": "SdkTasks.Compilation",
+        "category": "Compilation"
+      },
+      "violationType": "Unsafe path resolution buried deep in a multi-level call chain",
+      "renamingGuidance": "Rename chain methods to 'ProcessInputFile', 'ValidateInput', 'ResolveInputPath'. Rename vars to 'inputFile', 'processedFile'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/BaseClassHidesViolation.cs",
+        "className": "BaseClassHidesViolation",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Compilation/SourceFileProcessor.cs",
+        "className": "SourceFileProcessor",
+        "namespace": "SdkTasks.Compilation",
+        "category": "Compilation"
+      },
+      "violationType": "Base class contains unsafe path resolution hidden from the derived task",
+      "renamingGuidance": "Rename base class to 'BaseFileProcessor'. Rename methods to 'ProcessSourceFile', 'GetSourcePath'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/UtilityClassViolation.cs",
+        "className": "UtilityClassViolation",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Build/OutputPathConfigurator.cs",
+        "className": "OutputPathConfigurator",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Utility/helper class used by the task contains unsafe path operations",
+      "renamingGuidance": "Rename utility class to 'PathConfigHelper'. Rename methods to 'ConfigureOutputPath', 'SetOutputDirectory'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/AsyncDelegateViolation.cs",
+        "className": "AsyncDelegateViolation",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Build/ParallelFileHasher.cs",
+        "className": "ParallelFileHasher",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Async delegate captures and uses unsafe path resolution on background thread",
+      "renamingGuidance": "Rename delegate to 'hashComputation', 'fileHashAction'. Rename vars to 'fileHash', 'computedHash'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/EventHandlerViolation.cs",
+        "className": "EventHandlerViolation",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Analysis/FileChangeMonitor.cs",
+        "className": "FileChangeMonitor",
+        "namespace": "SdkTasks.Analysis",
+        "category": "Analysis"
+      },
+      "violationType": "Event handler performs unsafe path resolution when triggered",
+      "renamingGuidance": "Rename event handler to 'OnFileChanged', 'HandleFileModification'. Rename vars to 'changedFile', 'monitoredPath'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/ThreadPoolViolation.cs",
+        "className": "ThreadPoolViolation",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Build/ConcurrentWorkDispatcher.cs",
+        "className": "ConcurrentWorkDispatcher",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "ThreadPool work item uses unsafe path resolution on pool thread",
+      "renamingGuidance": "Rename to 'workItem', 'dispatchedTask'. Rename methods to 'DispatchWork', 'ProcessWorkItem'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/LazyInitializationViolation.cs",
+        "className": "LazyInitializationViolation",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Configuration/DeferredConfigLoader.cs",
+        "className": "DeferredConfigLoader",
+        "namespace": "SdkTasks.Configuration",
+        "category": "Configuration"
+      },
+      "violationType": "Lazy<T> initialization captures unsafe path resolution at first access",
+      "renamingGuidance": "Rename Lazy field to '_deferredConfig', '_lazySettings'. Rename methods to 'LoadConfiguration', 'GetDeferredValue'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/LinqPipelineViolation.cs",
+        "className": "LinqPipelineViolation",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Compilation/ItemFilterPipeline.cs",
+        "className": "ItemFilterPipeline",
+        "namespace": "SdkTasks.Compilation",
+        "category": "Compilation"
+      },
+      "violationType": "LINQ pipeline contains unsafe path resolution in Select/Where predicates",
+      "renamingGuidance": "Rename LINQ vars to 'filteredItems', 'matchingEntries'. Rename methods to 'FilterItems', 'ApplyItemFilter'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/DictionaryCacheViolation.cs",
+        "className": "DictionaryCacheViolation",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Build/AssemblyCacheResolver.cs",
+        "className": "AssemblyCacheResolver",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Dictionary cache stores results of unsafe path resolution, shared across instances",
+      "renamingGuidance": "Rename cache to '_assemblyCache', '_resolvedAssemblies'. Rename methods to 'ResolveAssembly', 'GetCachedAssembly'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/ProjectFileAnalyzer.cs",
+        "className": "ProjectFileAnalyzer",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Analysis/ProjectReferenceAnalyzer.cs",
+        "className": "ProjectReferenceAnalyzer",
+        "namespace": "SdkTasks.Analysis",
+        "category": "Analysis"
+      },
+      "violationType": "Analyzes project files using unsafe path resolution for project references",
+      "renamingGuidance": "Rename to 'projectReference', 'analyzedReference'. Rename methods to 'AnalyzeReferences', 'ResolveProjectReference'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/NuGetPackageValidator.cs",
+        "className": "NuGetPackageValidator",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Packaging/PackageIntegrityChecker.cs",
+        "className": "PackageIntegrityChecker",
+        "namespace": "SdkTasks.Packaging",
+        "category": "Packaging"
+      },
+      "violationType": "Validates NuGet packages using unsafe path resolution for package locations",
+      "renamingGuidance": "Rename to 'packagePath', 'integrityResult'. Rename methods to 'CheckIntegrity', 'ValidatePackageContents'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/AssemblyReferenceResolver.cs",
+        "className": "AssemblyReferenceResolver",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Build/FrameworkAssemblyLocator.cs",
+        "className": "FrameworkAssemblyLocator",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Resolves assembly references using unsafe path APIs for framework assembly locations",
+      "renamingGuidance": "Rename to 'frameworkAssembly', 'locatedAssembly'. Rename methods to 'LocateAssembly', 'FindFrameworkAssembly'."
+    },
+    {
+      "original": {
+        "file": "IntermittentViolations/CwdRaceCondition.cs",
+        "className": "CwdRaceCondition",
+        "namespace": "UnsafeThreadSafeTasks.IntermittentViolations",
+        "category": "IntermittentViolations"
+      },
+      "disguised": {
+        "file": "Build/ContextualPathResolver.cs",
+        "className": "ContextualPathResolver",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Race condition between reading CWD and using it for path resolution",
+      "renamingGuidance": "Rename to 'contextPath', 'resolvedContext'. Remove any references to 'Race', 'Cwd', or 'Condition'."
+    },
+    {
+      "original": {
+        "file": "IntermittentViolations/EnvVarToctou.cs",
+        "className": "EnvVarToctou",
+        "namespace": "UnsafeThreadSafeTasks.IntermittentViolations",
+        "category": "IntermittentViolations"
+      },
+      "disguised": {
+        "file": "Configuration/ConfigurationValidator.cs",
+        "className": "ConfigurationValidator",
+        "namespace": "SdkTasks.Configuration",
+        "category": "Configuration"
+      },
+      "violationType": "Time-of-check-time-of-use vulnerability with environment variable reads",
+      "renamingGuidance": "Rename to 'validatedConfig', 'configSnapshot'. Remove references to 'Toctou', 'EnvVar'. Use 'ValidateConfig', 'SnapshotConfiguration'."
+    },
+    {
+      "original": {
+        "file": "IntermittentViolations/StaticCachePathCollision.cs",
+        "className": "StaticCachePathCollision",
+        "namespace": "UnsafeThreadSafeTasks.IntermittentViolations",
+        "category": "IntermittentViolations"
+      },
+      "disguised": {
+        "file": "Build/PathResolutionCache.cs",
+        "className": "PathResolutionCache",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Static cache causes path collisions when multiple tasks resolve the same relative path",
+      "renamingGuidance": "Rename to '_pathCache', 'cachedResolution'. Remove 'Collision' from all identifiers. Use 'CachePath', 'GetCachedPath'."
+    },
+    {
+      "original": {
+        "file": "IntermittentViolations/SharedTempFileConflict.cs",
+        "className": "SharedTempFileConflict",
+        "namespace": "UnsafeThreadSafeTasks.IntermittentViolations",
+        "category": "IntermittentViolations"
+      },
+      "disguised": {
+        "file": "Build/IntermediateFileTransformer.cs",
+        "className": "IntermediateFileTransformer",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Shared temp file name causes conflicts when multiple tasks run concurrently",
+      "renamingGuidance": "Rename to 'intermediateFile', 'transformedOutput'. Remove 'Conflict', 'Shared', 'Temp' from identifiers."
+    },
+    {
+      "original": {
+        "file": "IntermittentViolations/ProcessStartInfoInheritsCwd.cs",
+        "className": "ProcessStartInfoInheritsCwd",
+        "namespace": "UnsafeThreadSafeTasks.IntermittentViolations",
+        "category": "IntermittentViolations"
+      },
+      "disguised": {
+        "file": "Tools/ToolchainInvoker.cs",
+        "className": "ToolchainInvoker",
+        "namespace": "SdkTasks.Tools",
+        "category": "Tools"
+      },
+      "violationType": "ProcessStartInfo inherits current working directory which may have been changed by another thread",
+      "renamingGuidance": "Rename to 'toolchainProcess', 'invokerConfig'. Remove 'Cwd', 'Inherits' from identifiers. Use 'InvokeToolchain', 'ConfigureInvocation'."
+    },
+    {
+      "original": {
+        "file": "IntermittentViolations/LazyEnvVarCapture.cs",
+        "className": "LazyEnvVarCapture",
+        "namespace": "UnsafeThreadSafeTasks.IntermittentViolations",
+        "category": "IntermittentViolations"
+      },
+      "disguised": {
+        "file": "Configuration/SdkLocationProvider.cs",
+        "className": "SdkLocationProvider",
+        "namespace": "SdkTasks.Configuration",
+        "category": "Configuration"
+      },
+      "violationType": "Lazily captures environment variable that may change between capture and use",
+      "renamingGuidance": "Rename to '_sdkLocation', 'providerResult'. Remove 'Lazy', 'Capture', 'EnvVar' from identifiers. Use 'GetSdkLocation', 'ProvideSdkPath'."
+    },
+    {
+      "original": {
+        "file": "IntermittentViolations/RegistryStyleGlobalState.cs",
+        "className": "RegistryStyleGlobalState",
+        "namespace": "UnsafeThreadSafeTasks.IntermittentViolations",
+        "category": "IntermittentViolations"
+      },
+      "disguised": {
+        "file": "Build/SharedBuildStateManager.cs",
+        "className": "SharedBuildStateManager",
+        "namespace": "SdkTasks.Build",
+        "category": "Build"
+      },
+      "violationType": "Registry-style global state dictionary shared across all task instances",
+      "renamingGuidance": "Rename to '_buildState', 'stateManager'. Remove 'Registry', 'Global' from identifiers. Use 'ManageState', 'GetBuildState'."
+    },
+    {
+      "original": {
+        "file": "IntermittentViolations/FileWatcherGlobalNotifications.cs",
+        "className": "FileWatcherGlobalNotifications",
+        "namespace": "UnsafeThreadSafeTasks.IntermittentViolations",
+        "category": "IntermittentViolations"
+      },
+      "disguised": {
+        "file": "Analysis/IncrementalChangeDetector.cs",
+        "className": "IncrementalChangeDetector",
+        "namespace": "SdkTasks.Analysis",
+        "category": "Analysis"
+      },
+      "violationType": "FileSystemWatcher sends global notifications that interfere across concurrent tasks",
+      "renamingGuidance": "Rename to '_changeDetector', 'detectedChanges'. Remove 'Global', 'Notifications' from identifiers. Use 'DetectChanges', 'MonitorChanges'."
+    }
+  ]
+}
