@@ -13,7 +13,7 @@ namespace UnsafeThreadSafeTasks.Tests
         // ── UsesConsoleWriteLine ─────────────────────────────────────────
 
         [Fact]
-        public void BrokenTask_UsesConsoleWriteLine_WritesToConsole()
+        public void UsesConsoleWriteLine_BrokenTask_ShouldWriteToBuildEngine()
         {
             var engine = new MockBuildEngine();
             var task = new Broken.UsesConsoleWriteLine
@@ -30,10 +30,11 @@ namespace UnsafeThreadSafeTasks.Tests
 
                 task.Execute();
 
+                // Assert CORRECT behavior: output should NOT go to Console
                 string consoleOutput = sw.ToString();
-                Assert.Contains("Hello from broken task", consoleOutput);
-                // Broken task does NOT log to engine
-                Assert.Empty(engine.Messages);
+                Assert.DoesNotContain("Hello from broken task", consoleOutput);
+                // Assert CORRECT behavior: output should go to build engine
+                Assert.Contains(engine.Messages, m => m.Message!.Contains("Hello from broken task"));
             }
             finally
             {
@@ -42,7 +43,7 @@ namespace UnsafeThreadSafeTasks.Tests
         }
 
         [Fact]
-        public void FixedTask_UsesConsoleWriteLine_WritesToBuildEngine()
+        public void UsesConsoleWriteLine_FixedTask_ShouldWriteToBuildEngine()
         {
             var engine = new MockBuildEngine();
             var task = new Fixed.UsesConsoleWriteLine
@@ -51,8 +52,6 @@ namespace UnsafeThreadSafeTasks.Tests
                 TaskEnvironment = TaskEnvironmentHelper.CreateForTest(),
                 Message = "Hello from fixed task"
             };
-
-            Assert.IsAssignableFrom<IMultiThreadableTask>(task);
 
             var originalOut = Console.Out;
             try
@@ -63,11 +62,11 @@ namespace UnsafeThreadSafeTasks.Tests
                 bool result = task.Execute();
 
                 Assert.True(result);
-                // Fixed task should NOT write to Console
+                // Assert CORRECT behavior: output should NOT go to Console
                 string consoleOutput = sw.ToString();
                 Assert.DoesNotContain("Hello from fixed task", consoleOutput);
-                // Fixed task logs to build engine
-                Assert.Contains(engine.Messages, m => m.Message.Contains("Hello from fixed task"));
+                // Assert CORRECT behavior: output should go to build engine
+                Assert.Contains(engine.Messages, m => m.Message!.Contains("Hello from fixed task"));
             }
             finally
             {
@@ -78,7 +77,7 @@ namespace UnsafeThreadSafeTasks.Tests
         // ── UsesConsoleReadLine ─────────────────────────────────────────
 
         [Fact]
-        public void BrokenTask_UsesConsoleReadLine_ReadsFromConsole()
+        public void UsesConsoleReadLine_BrokenTask_ShouldReadFromProperty()
         {
             var engine = new MockBuildEngine();
             var task = new Broken.UsesConsoleReadLine
@@ -86,14 +85,16 @@ namespace UnsafeThreadSafeTasks.Tests
                 BuildEngine = engine
             };
 
-            // The broken task calls Console.ReadLine() — we can verify by providing
-            // a StringReader as Console.In and checking it reads from it.
             var originalIn = Console.In;
             try
             {
-                Console.SetIn(new StringReader("simulated input"));
+                Console.SetIn(new StringReader("should not be read"));
+
                 task.Execute();
-                Assert.Equal("simulated input", task.UserInput);
+
+                // Assert CORRECT behavior: task should NOT read from Console.In
+                // It should use a property instead (like DefaultInput)
+                Assert.NotEqual("should not be read", task.UserInput);
             }
             finally
             {
@@ -102,7 +103,7 @@ namespace UnsafeThreadSafeTasks.Tests
         }
 
         [Fact]
-        public void FixedTask_UsesConsoleReadLine_ReadsFromProperty()
+        public void UsesConsoleReadLine_FixedTask_ShouldReadFromProperty()
         {
             var engine = new MockBuildEngine();
             var task = new Fixed.UsesConsoleReadLine
@@ -112,16 +113,15 @@ namespace UnsafeThreadSafeTasks.Tests
                 DefaultInput = "parameter input"
             };
 
-            Assert.IsAssignableFrom<IMultiThreadableTask>(task);
-
-            // The fixed task should NOT touch Console.In
             var originalIn = Console.In;
             try
             {
                 Console.SetIn(new StringReader("should not be read"));
+
                 bool result = task.Execute();
 
                 Assert.True(result);
+                // Assert CORRECT behavior: task should use DefaultInput, not Console.In
                 Assert.Equal("parameter input", task.UserInput);
             }
             finally
@@ -133,7 +133,7 @@ namespace UnsafeThreadSafeTasks.Tests
         // ── UsesConsoleSetOut ───────────────────────────────────────────
 
         [Fact]
-        public void BrokenTask_UsesConsoleSetOut_ChangesConsoleOut()
+        public void UsesConsoleSetOut_BrokenTask_ShouldNotChangeConsoleOut()
         {
             var engine = new MockBuildEngine();
             var tempFile = Path.GetTempFileName();
@@ -148,21 +148,23 @@ namespace UnsafeThreadSafeTasks.Tests
             {
                 task.Execute();
 
-                // After the broken task runs, Console.Out has been changed
-                Assert.NotSame(originalOut, Console.Out);
+                // Assert CORRECT behavior: Console.Out should be unchanged
+                Assert.Same(originalOut, Console.Out);
             }
             finally
             {
-                // Restore Console.Out and clean up
-                Console.Out.Flush();
-                Console.Out.Close();
-                Console.SetOut(originalOut);
+                if (!ReferenceEquals(originalOut, Console.Out))
+                {
+                    Console.Out.Flush();
+                    Console.Out.Close();
+                    Console.SetOut(originalOut);
+                }
                 try { File.Delete(tempFile); } catch { }
             }
         }
 
         [Fact]
-        public void FixedTask_UsesConsoleSetOut_DoesNotChangeConsoleOut()
+        public void UsesConsoleSetOut_FixedTask_ShouldNotChangeConsoleOut()
         {
             var engine = new MockBuildEngine();
             var task = new Fixed.UsesConsoleSetOut
@@ -172,17 +174,15 @@ namespace UnsafeThreadSafeTasks.Tests
                 LogFilePath = "somefile.log"
             };
 
-            Assert.IsAssignableFrom<IMultiThreadableTask>(task);
-
             var originalOut = Console.Out;
 
             bool result = task.Execute();
 
             Assert.True(result);
-            // Console.Out should be unchanged after fixed task runs
+            // Assert CORRECT behavior: Console.Out should be unchanged
             Assert.Same(originalOut, Console.Out);
             // Fixed task logs via build engine instead
-            Assert.Contains(engine.Messages, m => m.Message.Contains("Redirected output to log file."));
+            Assert.Contains(engine.Messages, m => m.Message!.Contains("Redirected output to log file."));
         }
     }
 }

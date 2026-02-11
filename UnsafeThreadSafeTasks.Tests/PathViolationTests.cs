@@ -28,7 +28,7 @@ namespace UnsafeThreadSafeTasks.Tests
         // =====================================================================
 
         [Fact]
-        public void UsesPathGetFullPath_AttributeOnly_BrokenTask_ResolvesRelativeToCwd()
+        public void UsesPathGetFullPath_AttributeOnly_BrokenTask_ShouldResolveRelativeToProjectDirectory()
         {
             var projectDir = CreateTempDir();
             var relativePath = "testfile.txt";
@@ -40,16 +40,16 @@ namespace UnsafeThreadSafeTasks.Tests
                 InputPath = relativePath
             };
 
-            // The broken task uses Path.GetFullPath, resolving relative to CWD
-            task.Execute();
+            bool result = task.Execute();
+            var engine = (MockBuildEngine)task.BuildEngine;
 
-            // The broken task resolved relative to CWD, NOT projectDir
-            var resolvedByCwd = Path.GetFullPath(relativePath);
-            Assert.NotEqual(Path.Combine(projectDir, relativePath), resolvedByCwd);
+            // Assert CORRECT behavior: task should find file at projectDir
+            Assert.True(result);
+            Assert.Contains(engine.Messages, m => m.Message!.Contains("File found at"));
         }
 
         [Fact]
-        public void UsesPathGetFullPath_AttributeOnly_FixedTask_ResolvesRelativeToProjectDirectory()
+        public void UsesPathGetFullPath_AttributeOnly_FixedTask_ShouldResolveRelativeToProjectDirectory()
         {
             var projectDir = CreateTempDir();
             var relativePath = "testfile.txt";
@@ -63,11 +63,11 @@ namespace UnsafeThreadSafeTasks.Tests
             };
 
             bool result = task.Execute();
-
-            Assert.True(result);
-            // Verify the fixed task found the file in projectDir
             var engine = (MockBuildEngine)task.BuildEngine;
-            Assert.Contains(engine.Messages, m => m.Message.Contains("File found at"));
+
+            // Assert CORRECT behavior: task should find file at projectDir
+            Assert.True(result);
+            Assert.Contains(engine.Messages, m => m.Message!.Contains("File found at"));
         }
 
         // =====================================================================
@@ -75,52 +75,52 @@ namespace UnsafeThreadSafeTasks.Tests
         // =====================================================================
 
         [Fact]
-        public void UsesPathGetFullPath_ForCanonicalization_BrokenTask_ResolvesRelativeToCwd()
+        public void UsesPathGetFullPath_ForCanonicalization_BrokenTask_ShouldResolveRelativeToProjectDirectory()
         {
             var projectDir = CreateTempDir();
             var relativePath = "subdir/../canon-test.txt";
             Directory.CreateDirectory(Path.Combine(projectDir, "subdir"));
             File.WriteAllText(Path.Combine(projectDir, "canon-test.txt"), "content");
 
+            var taskEnv = new Infrastructure.TrackingTaskEnvironment { ProjectDirectory = projectDir };
             var task = new Broken.UsesPathGetFullPath_ForCanonicalization
             {
                 BuildEngine = new MockBuildEngine(),
-                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(projectDir),
-                InputPath = relativePath
-            };
-
-            // The broken task calls Path.GetFullPath for canonicalization after resolving absolute path.
-            // With the already-resolved absolute path it may still work, but the violation is the use of Path.GetFullPath.
-            task.Execute();
-
-            // The key issue: the broken task uses Path.GetFullPath (forbidden API) even though result may be same.
-            // We verify the broken task calls Path.GetFullPath by checking it resolves to CWD-based canonical path
-            // when given only a relative path without TaskEnvironment resolution first.
-            var brokenResolve = Path.GetFullPath(relativePath);
-            Assert.DoesNotContain(projectDir, brokenResolve);
-        }
-
-        [Fact]
-        public void UsesPathGetFullPath_ForCanonicalization_FixedTask_ResolvesRelativeToProjectDirectory()
-        {
-            var projectDir = CreateTempDir();
-            var relativePath = "subdir/../canon-test.txt";
-            Directory.CreateDirectory(Path.Combine(projectDir, "subdir"));
-            File.WriteAllText(Path.Combine(projectDir, "canon-test.txt"), "content");
-
-            var task = new Fixed.UsesPathGetFullPath_ForCanonicalization
-            {
-                BuildEngine = new MockBuildEngine(),
-                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(projectDir),
+                TaskEnvironment = taskEnv,
                 InputPath = relativePath
             };
 
             bool result = task.Execute();
 
+            // The broken task uses Path.GetFullPath() for canonicalization instead of
+            // TaskEnvironment.GetCanonicalForm(). Verify GetCanonicalForm was called.
             Assert.True(result);
-            var engine = (MockBuildEngine)task.BuildEngine;
-            // The fixed task should find and read the file via TaskEnvironment
-            Assert.Contains(engine.Messages, m => m.Message.Contains("Read") && m.Message.Contains("characters"));
+            Assert.True(taskEnv.GetCanonicalFormCallCount > 0,
+                "Broken task should use TaskEnvironment.GetCanonicalForm() instead of Path.GetFullPath()");
+        }
+
+        [Fact]
+        public void UsesPathGetFullPath_ForCanonicalization_FixedTask_ShouldResolveRelativeToProjectDirectory()
+        {
+            var projectDir = CreateTempDir();
+            var relativePath = "subdir/../canon-test.txt";
+            Directory.CreateDirectory(Path.Combine(projectDir, "subdir"));
+            File.WriteAllText(Path.Combine(projectDir, "canon-test.txt"), "content");
+
+            var taskEnv = new Infrastructure.TrackingTaskEnvironment { ProjectDirectory = projectDir };
+            var task = new Fixed.UsesPathGetFullPath_ForCanonicalization
+            {
+                BuildEngine = new MockBuildEngine(),
+                TaskEnvironment = taskEnv,
+                InputPath = relativePath
+            };
+
+            bool result = task.Execute();
+
+            // Assert CORRECT behavior: fixed task uses TaskEnvironment.GetCanonicalForm()
+            Assert.True(result);
+            Assert.True(taskEnv.GetCanonicalFormCallCount > 0,
+                "Fixed task should use TaskEnvironment.GetCanonicalForm() instead of Path.GetFullPath()");
         }
 
         // =====================================================================
@@ -128,7 +128,7 @@ namespace UnsafeThreadSafeTasks.Tests
         // =====================================================================
 
         [Fact]
-        public void UsesPathGetFullPath_IgnoresTaskEnv_BrokenTask_ResolvesRelativeToCwd()
+        public void UsesPathGetFullPath_IgnoresTaskEnv_BrokenTask_ShouldResolveRelativeToProjectDirectory()
         {
             var projectDir = CreateTempDir();
             var relativePath = "ignoretask.txt";
@@ -141,16 +141,16 @@ namespace UnsafeThreadSafeTasks.Tests
                 InputPath = relativePath
             };
 
-            task.Execute();
-
-            // Broken task uses Path.GetFullPath which resolves relative to CWD, not projectDir
+            bool result = task.Execute();
             var engine = (MockBuildEngine)task.BuildEngine;
-            // The file exists only in projectDir, not in CWD, so broken task won't find it
-            Assert.Contains(engine.Warnings, w => w.Message.Contains("does not exist"));
+
+            // Assert CORRECT behavior: task should find the file and report its size
+            Assert.True(result);
+            Assert.Contains(engine.Messages, m => m.Message!.Contains("File size:"));
         }
 
         [Fact]
-        public void UsesPathGetFullPath_IgnoresTaskEnv_FixedTask_ResolvesRelativeToProjectDirectory()
+        public void UsesPathGetFullPath_IgnoresTaskEnv_FixedTask_ShouldResolveRelativeToProjectDirectory()
         {
             var projectDir = CreateTempDir();
             var relativePath = "ignoretask.txt";
@@ -164,11 +164,11 @@ namespace UnsafeThreadSafeTasks.Tests
             };
 
             bool result = task.Execute();
-
-            Assert.True(result);
             var engine = (MockBuildEngine)task.BuildEngine;
-            // The fixed task should find the file and report its size
-            Assert.Contains(engine.Messages, m => m.Message.Contains("File size:"));
+
+            // Assert CORRECT behavior: task should find the file and report its size
+            Assert.True(result);
+            Assert.Contains(engine.Messages, m => m.Message!.Contains("File size:"));
         }
 
         // =====================================================================
@@ -176,7 +176,7 @@ namespace UnsafeThreadSafeTasks.Tests
         // =====================================================================
 
         [Fact]
-        public void RelativePathToFileExists_BrokenTask_ResolvesRelativeToCwd()
+        public void RelativePathToFileExists_BrokenTask_ShouldResolveRelativeToProjectDirectory()
         {
             var projectDir = CreateTempDir();
             var relativePath = "filecheck.txt";
@@ -189,15 +189,16 @@ namespace UnsafeThreadSafeTasks.Tests
                 FilePath = relativePath
             };
 
-            task.Execute();
-
-            // Broken task passes relative path to File.Exists — resolves against CWD
+            bool result = task.Execute();
             var engine = (MockBuildEngine)task.BuildEngine;
-            Assert.Contains(engine.Warnings, w => w.Message.Contains("was not found"));
+
+            // Assert CORRECT behavior: task should find the file and report its content length
+            Assert.True(result);
+            Assert.Contains(engine.Messages, m => m.Message!.Contains("contains") && m.Message!.Contains("characters"));
         }
 
         [Fact]
-        public void RelativePathToFileExists_FixedTask_ResolvesRelativeToProjectDirectory()
+        public void RelativePathToFileExists_FixedTask_ShouldResolveRelativeToProjectDirectory()
         {
             var projectDir = CreateTempDir();
             var relativePath = "filecheck.txt";
@@ -211,10 +212,11 @@ namespace UnsafeThreadSafeTasks.Tests
             };
 
             bool result = task.Execute();
-
-            Assert.True(result);
             var engine = (MockBuildEngine)task.BuildEngine;
-            Assert.Contains(engine.Messages, m => m.Message.Contains("contains") && m.Message.Contains("characters"));
+
+            // Assert CORRECT behavior: task should find the file and report its content length
+            Assert.True(result);
+            Assert.Contains(engine.Messages, m => m.Message!.Contains("contains") && m.Message!.Contains("characters"));
         }
 
         // =====================================================================
@@ -222,7 +224,7 @@ namespace UnsafeThreadSafeTasks.Tests
         // =====================================================================
 
         [Fact]
-        public void RelativePathToDirectoryExists_BrokenTask_ResolvesRelativeToCwd()
+        public void RelativePathToDirectoryExists_BrokenTask_ShouldResolveRelativeToProjectDirectory()
         {
             var projectDir = CreateTempDir();
             var relativePath = "mysubdir";
@@ -236,21 +238,21 @@ namespace UnsafeThreadSafeTasks.Tests
                 DirectoryPath = relativePath
             };
 
-            task.Execute();
-
-            // Broken task passes relative path to Directory.Exists — resolves against CWD.
-            // Since "mysubdir" doesn't exist in CWD, it tries to create it there.
+            bool result = task.Execute();
             var engine = (MockBuildEngine)task.BuildEngine;
-            Assert.Contains(engine.Messages, m => m.Message.Contains("Creating directory"));
 
-            // Clean up the directory it may have created in CWD
+            // Assert CORRECT behavior: task should find the existing directory and report file count
+            Assert.True(result);
+            Assert.Contains(engine.Messages, m => m.Message!.Contains("exists with") && m.Message!.Contains("file(s)"));
+
+            // Clean up directory that broken task may have created in CWD
             var cwdPath = Path.Combine(Directory.GetCurrentDirectory(), relativePath);
             if (Directory.Exists(cwdPath))
                 Directory.Delete(cwdPath, true);
         }
 
         [Fact]
-        public void RelativePathToDirectoryExists_FixedTask_ResolvesRelativeToProjectDirectory()
+        public void RelativePathToDirectoryExists_FixedTask_ShouldResolveRelativeToProjectDirectory()
         {
             var projectDir = CreateTempDir();
             var relativePath = "mysubdir";
@@ -265,11 +267,11 @@ namespace UnsafeThreadSafeTasks.Tests
             };
 
             bool result = task.Execute();
-
-            Assert.True(result);
             var engine = (MockBuildEngine)task.BuildEngine;
-            // Fixed task should find the existing directory and report file count
-            Assert.Contains(engine.Messages, m => m.Message.Contains("exists with") && m.Message.Contains("file(s)"));
+
+            // Assert CORRECT behavior: task should find the existing directory and report file count
+            Assert.True(result);
+            Assert.Contains(engine.Messages, m => m.Message!.Contains("exists with") && m.Message!.Contains("file(s)"));
         }
 
         // =====================================================================
@@ -277,7 +279,7 @@ namespace UnsafeThreadSafeTasks.Tests
         // =====================================================================
 
         [Fact]
-        public void RelativePathToFileStream_BrokenTask_ResolvesRelativeToCwd()
+        public void RelativePathToFileStream_BrokenTask_ShouldResolveRelativeToProjectDirectory()
         {
             var projectDir = CreateTempDir();
             var relativePath = "streamout.bin";
@@ -291,20 +293,19 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Broken task writes to CWD, not projectDir
-            var cwdPath = Path.Combine(Directory.GetCurrentDirectory(), relativePath);
             var projectPath = Path.Combine(projectDir, relativePath);
 
-            Assert.True(File.Exists(cwdPath), "Broken task should write to CWD");
-            Assert.False(File.Exists(projectPath), "Broken task should NOT write to projectDir");
+            // Assert CORRECT behavior: file should be written to projectDir
+            Assert.True(File.Exists(projectPath), "Task should write to projectDir");
 
-            // Clean up file in CWD
+            // Clean up file that broken task may have written to CWD
+            var cwdPath = Path.Combine(Directory.GetCurrentDirectory(), relativePath);
             if (File.Exists(cwdPath))
                 File.Delete(cwdPath);
         }
 
         [Fact]
-        public void RelativePathToFileStream_FixedTask_ResolvesRelativeToProjectDirectory()
+        public void RelativePathToFileStream_FixedTask_ShouldResolveRelativeToProjectDirectory()
         {
             var projectDir = CreateTempDir();
             var relativePath = "streamout.bin";
@@ -316,11 +317,12 @@ namespace UnsafeThreadSafeTasks.Tests
                 OutputPath = relativePath
             };
 
-            bool result = task.Execute();
+            task.Execute();
 
-            Assert.True(result);
             var projectPath = Path.Combine(projectDir, relativePath);
-            Assert.True(File.Exists(projectPath), "Fixed task should write to projectDir");
+
+            // Assert CORRECT behavior: file should be written to projectDir
+            Assert.True(File.Exists(projectPath), "Task should write to projectDir");
         }
 
         // =====================================================================
@@ -328,44 +330,57 @@ namespace UnsafeThreadSafeTasks.Tests
         // =====================================================================
 
         [Fact]
-        public void RelativePathToXDocument_BrokenTask_ResolvesRelativeToCwd()
+        public void RelativePathToXDocument_BrokenTask_ShouldResolveRelativeToProjectDirectory()
         {
             var projectDir = CreateTempDir();
             var relativePath = "data.xml";
             File.WriteAllText(Path.Combine(projectDir, relativePath), "<root><item/></root>");
 
+            var engine = new MockBuildEngine();
             var task = new Broken.RelativePathToXDocument
             {
-                BuildEngine = new MockBuildEngine(),
+                BuildEngine = engine,
                 TaskEnvironment = TaskEnvironmentHelper.CreateForTest(projectDir),
                 XmlPath = relativePath
             };
 
-            // Broken task passes relative path to XDocument.Load — will fail because file is not in CWD
-            var ex = Record.Exception(() => task.Execute());
-            Assert.NotNull(ex);
+            bool result;
+            try
+            {
+                result = task.Execute();
+            }
+            catch
+            {
+                result = false;
+            }
+
+            // Assert CORRECT behavior: task should load and save the XML successfully
+            Assert.True(result);
+            Assert.Contains(engine.Messages, m => m.Message!.Contains("Loaded XML with"));
+            Assert.Contains(engine.Messages, m => m.Message!.Contains("Saved updated XML"));
         }
 
         [Fact]
-        public void RelativePathToXDocument_FixedTask_ResolvesRelativeToProjectDirectory()
+        public void RelativePathToXDocument_FixedTask_ShouldResolveRelativeToProjectDirectory()
         {
             var projectDir = CreateTempDir();
             var relativePath = "data.xml";
             File.WriteAllText(Path.Combine(projectDir, relativePath), "<root><item/></root>");
 
+            var engine = new MockBuildEngine();
             var task = new Fixed.RelativePathToXDocument
             {
-                BuildEngine = new MockBuildEngine(),
+                BuildEngine = engine,
                 TaskEnvironment = TaskEnvironmentHelper.CreateForTest(projectDir),
                 XmlPath = relativePath
             };
 
             bool result = task.Execute();
 
+            // Assert CORRECT behavior: task should load and save the XML successfully
             Assert.True(result);
-            var engine = (MockBuildEngine)task.BuildEngine;
-            Assert.Contains(engine.Messages, m => m.Message.Contains("Loaded XML with"));
-            Assert.Contains(engine.Messages, m => m.Message.Contains("Saved updated XML"));
+            Assert.Contains(engine.Messages, m => m.Message!.Contains("Loaded XML with"));
+            Assert.Contains(engine.Messages, m => m.Message!.Contains("Saved updated XML"));
         }
     }
 }

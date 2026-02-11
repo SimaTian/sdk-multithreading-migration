@@ -4,6 +4,8 @@ using Xunit;
 using Broken = UnsafeThreadSafeTasks.ProcessViolations;
 using Fixed = FixedThreadSafeTasks.ProcessViolations;
 
+#nullable disable
+
 namespace UnsafeThreadSafeTasks.Tests
 {
     public class ProcessViolationTests
@@ -11,7 +13,7 @@ namespace UnsafeThreadSafeTasks.Tests
         // ── UsesRawProcessStartInfo ─────────────────────────────────────
 
         [Fact]
-        public void BrokenTask_UsesRawProcessStartInfo_DoesNotSetWorkingDirectory()
+        public void UsesRawProcessStartInfo_BrokenTask_ShouldSetWorkingDirectoryToProjectDir()
         {
             var engine = new MockBuildEngine();
             var projectDir = TestHelper.CreateNonCwdTempDirectory();
@@ -22,25 +24,14 @@ namespace UnsafeThreadSafeTasks.Tests
                     BuildEngine = engine,
                     TaskEnvironment = TaskEnvironmentHelper.CreateForTest(projectDir),
                     Command = "cmd.exe",
-                    Arguments = "/c echo hello"
+                    Arguments = "/c cd"
                 };
 
-                // The broken task creates ProcessStartInfo directly, so WorkingDirectory
-                // is NOT set to ProjectDirectory. We can verify by inspecting the pattern:
-                // new ProcessStartInfo(Command, Arguments) does not set WorkingDirectory.
-                // We verify the task type does implement IMultiThreadableTask but misuses it.
-                Assert.IsAssignableFrom<IMultiThreadableTask>(task);
+                bool result = task.Execute();
 
-                // The broken task's ProcessStartInfo won't have WorkingDirectory = projectDir
-                // because it uses `new ProcessStartInfo(Command, Arguments)` directly.
-                // We can't easily intercept the PSI, but we can verify TaskEnvironment.GetProcessStartInfo()
-                // would set it correctly, while the broken task ignores it.
-                var psi = task.TaskEnvironment.GetProcessStartInfo();
-                Assert.Equal(projectDir, psi.WorkingDirectory);
-
-                // The broken code creates its own PSI — verify it doesn't use TaskEnvironment
-                var brokenPsi = new System.Diagnostics.ProcessStartInfo(task.Command, task.Arguments);
-                Assert.NotEqual(projectDir, brokenPsi.WorkingDirectory);
+                // Assert CORRECT behavior: task should run in ProjectDirectory
+                Assert.True(result);
+                Assert.Contains(engine.Messages!, m => m.Message!.Contains(projectDir));
             }
             finally
             {
@@ -49,7 +40,7 @@ namespace UnsafeThreadSafeTasks.Tests
         }
 
         [Fact]
-        public void FixedTask_UsesRawProcessStartInfo_SetsWorkingDirectoryFromTaskEnvironment()
+        public void UsesRawProcessStartInfo_FixedTask_ShouldSetWorkingDirectoryToProjectDir()
         {
             var engine = new MockBuildEngine();
             var projectDir = TestHelper.CreateNonCwdTempDirectory();
@@ -60,18 +51,14 @@ namespace UnsafeThreadSafeTasks.Tests
                     BuildEngine = engine,
                     TaskEnvironment = TaskEnvironmentHelper.CreateForTest(projectDir),
                     Command = "cmd.exe",
-                    Arguments = "/c echo hello"
+                    Arguments = "/c cd"
                 };
 
-                Assert.IsAssignableFrom<IMultiThreadableTask>(task);
-
-                // The fixed task uses TaskEnvironment.GetProcessStartInfo() which sets WorkingDirectory
-                var psi = task.TaskEnvironment.GetProcessStartInfo();
-                Assert.Equal(projectDir, psi.WorkingDirectory);
-
-                // Execute the fixed task — it should run successfully
                 bool result = task.Execute();
+
+                // Assert CORRECT behavior: task should run in ProjectDirectory
                 Assert.True(result);
+                Assert.Contains(engine.Messages!, m => m.Message!.Contains(projectDir));
             }
             finally
             {
@@ -80,19 +67,29 @@ namespace UnsafeThreadSafeTasks.Tests
         }
 
         // ── CallsEnvironmentExit ────────────────────────────────────────
+        // The broken task calls Environment.Exit() which would crash the test host.
+        // We assert correct structure: it should implement IMultiThreadableTask with TaskEnvironment.
 
         [Fact]
-        public void BrokenTask_CallsEnvironmentExit_IsAttributeOnlyWithoutIMultiThreadableTask()
+        public void CallsEnvironmentExit_BrokenTask_ShouldImplementIMultiThreadableTask()
         {
-            // The broken task has [MSBuildMultiThreadableTask] but does NOT implement IMultiThreadableTask.
-            // This is itself a mismatch — it claims to be multithreadable but uses Environment.Exit().
             var task = new Broken.CallsEnvironmentExit();
-            Assert.False(task is IMultiThreadableTask,
-                "Broken task should NOT implement IMultiThreadableTask (attribute-only mismatch).");
+
+            // Assert CORRECT behavior: task should implement IMultiThreadableTask
+            Assert.IsAssignableFrom<IMultiThreadableTask>(task);
         }
 
         [Fact]
-        public void FixedTask_CallsEnvironmentExit_ReturnsFalseAndLogsError()
+        public void CallsEnvironmentExit_FixedTask_ShouldImplementIMultiThreadableTask()
+        {
+            var task = new Fixed.CallsEnvironmentExit();
+
+            // Assert CORRECT behavior: task should implement IMultiThreadableTask
+            Assert.IsAssignableFrom<IMultiThreadableTask>(task);
+        }
+
+        [Fact]
+        public void CallsEnvironmentExit_FixedTask_ShouldReturnFalseAndLogError()
         {
             var engine = new MockBuildEngine();
             var task = new Fixed.CallsEnvironmentExit
@@ -102,26 +99,34 @@ namespace UnsafeThreadSafeTasks.Tests
                 ExitCode = 1
             };
 
-            Assert.IsAssignableFrom<IMultiThreadableTask>(task);
-
             bool result = task.Execute();
 
             Assert.False(result);
-            Assert.Contains(engine.Errors, e => e.Message.Contains("exit code 1"));
+            Assert.Contains(engine.Errors!, e => e.Message!.Contains("exit code 1"));
         }
 
         // ── CallsEnvironmentFailFast ────────────────────────────────────
 
         [Fact]
-        public void BrokenTask_CallsEnvironmentFailFast_IsAttributeOnlyWithoutIMultiThreadableTask()
+        public void CallsEnvironmentFailFast_BrokenTask_ShouldImplementIMultiThreadableTask()
         {
             var task = new Broken.CallsEnvironmentFailFast();
-            Assert.False(task is IMultiThreadableTask,
-                "Broken task should NOT implement IMultiThreadableTask (attribute-only mismatch).");
+
+            // Assert CORRECT behavior: task should implement IMultiThreadableTask
+            Assert.IsAssignableFrom<IMultiThreadableTask>(task);
         }
 
         [Fact]
-        public void FixedTask_CallsEnvironmentFailFast_ReturnsFalseAndLogsError()
+        public void CallsEnvironmentFailFast_FixedTask_ShouldImplementIMultiThreadableTask()
+        {
+            var task = new Fixed.CallsEnvironmentFailFast();
+
+            // Assert CORRECT behavior: task should implement IMultiThreadableTask
+            Assert.IsAssignableFrom<IMultiThreadableTask>(task);
+        }
+
+        [Fact]
+        public void CallsEnvironmentFailFast_FixedTask_ShouldReturnFalseAndLogError()
         {
             var engine = new MockBuildEngine();
             var task = new Fixed.CallsEnvironmentFailFast
@@ -131,26 +136,34 @@ namespace UnsafeThreadSafeTasks.Tests
                 ErrorMessage = "Something went wrong"
             };
 
-            Assert.IsAssignableFrom<IMultiThreadableTask>(task);
-
             bool result = task.Execute();
 
             Assert.False(result);
-            Assert.Contains(engine.Errors, e => e.Message.Contains("Something went wrong"));
+            Assert.Contains(engine.Errors!, e => e.Message!.Contains("Something went wrong"));
         }
 
         // ── CallsProcessKill ────────────────────────────────────────────
 
         [Fact]
-        public void BrokenTask_CallsProcessKill_IsAttributeOnlyWithoutIMultiThreadableTask()
+        public void CallsProcessKill_BrokenTask_ShouldImplementIMultiThreadableTask()
         {
             var task = new Broken.CallsProcessKill();
-            Assert.False(task is IMultiThreadableTask,
-                "Broken task should NOT implement IMultiThreadableTask (attribute-only mismatch).");
+
+            // Assert CORRECT behavior: task should implement IMultiThreadableTask
+            Assert.IsAssignableFrom<IMultiThreadableTask>(task);
         }
 
         [Fact]
-        public void FixedTask_CallsProcessKill_ReturnsFalseAndLogsError()
+        public void CallsProcessKill_FixedTask_ShouldImplementIMultiThreadableTask()
+        {
+            var task = new Fixed.CallsProcessKill();
+
+            // Assert CORRECT behavior: task should implement IMultiThreadableTask
+            Assert.IsAssignableFrom<IMultiThreadableTask>(task);
+        }
+
+        [Fact]
+        public void CallsProcessKill_FixedTask_ShouldReturnFalseAndLogError()
         {
             var engine = new MockBuildEngine();
             var task = new Fixed.CallsProcessKill
@@ -158,8 +171,6 @@ namespace UnsafeThreadSafeTasks.Tests
                 BuildEngine = engine,
                 TaskEnvironment = TaskEnvironmentHelper.CreateForTest()
             };
-
-            Assert.IsAssignableFrom<IMultiThreadableTask>(task);
 
             bool result = task.Execute();
 

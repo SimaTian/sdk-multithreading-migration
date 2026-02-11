@@ -9,7 +9,7 @@ namespace UnsafeThreadSafeTasks.EnvironmentViolations
     [MSBuildMultiThreadableTask]
     public class ReadsEnvironmentCurrentDirectory : MSBuildTask, IMultiThreadableTask
     {
-        public TaskEnvironment TaskEnvironment { get; set; }
+        public TaskEnvironment TaskEnvironment { get; set; } = null!;
 
         [Output]
         public string? CurrentDir { get; set; }

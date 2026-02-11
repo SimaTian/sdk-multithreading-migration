@@ -11,13 +11,13 @@ namespace FixedThreadSafeTasks.ComplexViolations
     [MSBuildMultiThreadableTask]
     public class DeepCallChainPathResolve : MSBuildTask, IMultiThreadableTask
     {
-        public TaskEnvironment TaskEnvironment { get; set; }
+        public TaskEnvironment TaskEnvironment { get; set; } = null!;
 
         [Required]
-        public ITaskItem[] InputFiles { get; set; }
+        public ITaskItem[] InputFiles { get; set; } = Array.Empty<ITaskItem>();
 
         [Output]
-        public ITaskItem[] ProcessedFiles { get; set; }
+        public ITaskItem[] ProcessedFiles { get; set; } = Array.Empty<ITaskItem>();
 
         public override bool Execute()
         {
@@ -50,7 +50,7 @@ namespace FixedThreadSafeTasks.ComplexViolations
             return processed;
         }
 
-        private ITaskItem ValidateFile(ITaskItem item)
+        private ITaskItem? ValidateFile(ITaskItem item)
         {
             string rawPath = item.ItemSpec;
             if (string.IsNullOrWhiteSpace(rawPath))

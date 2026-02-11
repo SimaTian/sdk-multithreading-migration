@@ -8,7 +8,7 @@ namespace UnsafeThreadSafeTasks.EnvironmentViolations
     [MSBuildMultiThreadableTask]
     public class UsesEnvironmentGetVariable : MSBuildTask, IMultiThreadableTask
     {
-        public TaskEnvironment TaskEnvironment { get; set; }
+        public TaskEnvironment TaskEnvironment { get; set; } = null!;
 
         public string? VariableName { get; set; }
 
@@ -17,7 +17,7 @@ namespace UnsafeThreadSafeTasks.EnvironmentViolations
 
         public override bool Execute()
         {
-            VariableValue = Environment.GetEnvironmentVariable(VariableName);
+            VariableValue = Environment.GetEnvironmentVariable(VariableName!);
             return true;
         }
     }

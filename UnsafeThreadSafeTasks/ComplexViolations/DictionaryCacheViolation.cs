@@ -14,7 +14,7 @@ namespace UnsafeThreadSafeTasks.ComplexViolations
     [MSBuildMultiThreadableTask]
     public class DictionaryCacheViolation : Microsoft.Build.Utilities.Task, IMultiThreadableTask
     {
-        public TaskEnvironment TaskEnvironment { get; set; }
+        public TaskEnvironment TaskEnvironment { get; set; } = null!;
 
         // Violation: static mutable shared state across task instances
         private static readonly ConcurrentDictionary<string, string> _pathCache = new();
@@ -22,12 +22,12 @@ namespace UnsafeThreadSafeTasks.ComplexViolations
         private static readonly string[] s_probeExtensions = new[] { ".dll", ".exe" };
 
         [Required]
-        public ITaskItem[] AssemblyReferences { get; set; }
+        public ITaskItem[] AssemblyReferences { get; set; } = Array.Empty<ITaskItem>();
 
-        public string TargetDirectory { get; set; }
+        public string TargetDirectory { get; set; } = string.Empty;
 
         [Output]
-        public ITaskItem[] ResolvedReferences { get; set; }
+        public ITaskItem[] ResolvedReferences { get; set; } = Array.Empty<ITaskItem>();
 
         public override bool Execute()
         {
@@ -46,7 +46,7 @@ namespace UnsafeThreadSafeTasks.ComplexViolations
             foreach (ITaskItem reference in AssemblyReferences)
             {
                 string assemblyName = reference.ItemSpec;
-                string resolvedPath = ResolveAssemblyPath(assemblyName);
+                string? resolvedPath = ResolveAssemblyPath(assemblyName);
 
                 if (!string.IsNullOrEmpty(resolvedPath))
                 {
@@ -65,14 +65,14 @@ namespace UnsafeThreadSafeTasks.ComplexViolations
             return true;
         }
 
-        private string ResolveAssemblyPath(string assemblyName)
+        private string? ResolveAssemblyPath(string assemblyName)
         {
-            if (_pathCache.TryGetValue(assemblyName, out string cachedPath))
+            if (_pathCache.TryGetValue(assemblyName, out string? cachedPath))
             {
                 return cachedPath;
             }
 
-            string computedPath = ComputeAssemblyPath(assemblyName);
+            string? computedPath = ComputeAssemblyPath(assemblyName);
             if (!string.IsNullOrEmpty(computedPath))
             {
                 _pathCache.TryAdd(assemblyName, computedPath);
@@ -80,13 +80,13 @@ namespace UnsafeThreadSafeTasks.ComplexViolations
             return computedPath;
         }
 
-        private string ComputeAssemblyPath(string assemblyName)
+        private string? ComputeAssemblyPath(string assemblyName)
         {
             string[] probePaths = GetProbePaths();
 
             foreach (string probeDir in probePaths)
             {
-                string result = ProbeDirectory(probeDir, assemblyName);
+                string? result = ProbeDirectory(probeDir, assemblyName);
                 if (result != null)
                     return result;
             }
@@ -118,7 +118,7 @@ namespace UnsafeThreadSafeTasks.ComplexViolations
             return paths.ToArray();
         }
 
-        private string ProbeDirectory(string dir, string assemblyName)
+        private string? ProbeDirectory(string dir, string assemblyName)
         {
             if (!Directory.Exists(dir))
                 return null;

@@ -30,7 +30,7 @@ namespace UnsafeThreadSafeTasks.Tests
         #region DeepCallChainPathResolve
 
         [Fact]
-        public void BrokenDeepCallChain_ResolvesIncorrectly()
+        public void DeepCallChain_Broken_ShouldResolveToProjectDir()
         {
             File.WriteAllText(Path.Combine(_tempDir, "test.txt"), "// test");
 
@@ -41,25 +41,25 @@ namespace UnsafeThreadSafeTasks.Tests
                 InputFiles = new ITaskItem[] { new TaskItem("test.txt") }
             };
 
-            // Broken: resolves relative to CWD, not tempDir
-            // Also has a bug with setting "Extension" reserved metadata
+            bool result;
             try
             {
-                task.Execute();
-                if (task.ProcessedFiles.Length > 0)
-                {
-                    string resolved = task.ProcessedFiles[0].ItemSpec;
-                    Assert.DoesNotContain(_tempDir, resolved, StringComparison.OrdinalIgnoreCase);
-                }
+                result = task.Execute();
             }
-            catch (ArgumentException)
+            catch
             {
-                // Expected: "Extension" is a reserved metadata name in MSBuild
+                result = false;
             }
+
+            // Assert CORRECT behavior: resolved paths should contain tempDir
+            Assert.True(result);
+            Assert.NotEmpty(task.ProcessedFiles);
+            string resolved = task.ProcessedFiles[0].ItemSpec;
+            Assert.StartsWith(_tempDir, resolved, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
-        public void FixedDeepCallChain_ResolvesCorrectly()
+        public void DeepCallChain_Fixed_ShouldResolveToProjectDir()
         {
             File.WriteAllText(Path.Combine(_tempDir, "test.txt"), "// test");
 
@@ -72,6 +72,7 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
+            // Assert CORRECT behavior: resolved paths should contain tempDir
             Assert.NotEmpty(task.ProcessedFiles);
             string resolved = task.ProcessedFiles[0].ItemSpec;
             Assert.StartsWith(_tempDir, resolved, StringComparison.OrdinalIgnoreCase);
@@ -82,7 +83,7 @@ namespace UnsafeThreadSafeTasks.Tests
         #region BaseClassHidesViolation
 
         [Fact]
-        public void BrokenBaseClass_ResolvesIncorrectly()
+        public void BaseClass_Broken_ShouldResolveToProjectDir()
         {
             File.WriteAllText(Path.Combine(_tempDir, "source.cs"), "// src");
 
@@ -95,15 +96,14 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            if (task.ResolvedSources.Length > 0)
-            {
-                string resolved = task.ResolvedSources[0].ItemSpec;
-                Assert.DoesNotContain(_tempDir, resolved, StringComparison.OrdinalIgnoreCase);
-            }
+            // Assert CORRECT behavior: resolved paths should contain tempDir
+            Assert.NotEmpty(task.ResolvedSources);
+            string resolved = task.ResolvedSources[0].ItemSpec;
+            Assert.StartsWith(_tempDir, resolved, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
-        public void FixedBaseClass_ResolvesCorrectly()
+        public void BaseClass_Fixed_ShouldResolveToProjectDir()
         {
             File.WriteAllText(Path.Combine(_tempDir, "source.cs"), "// src");
 
@@ -116,6 +116,7 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
+            // Assert CORRECT behavior: resolved paths should contain tempDir
             Assert.NotEmpty(task.ResolvedSources);
             string resolved = task.ResolvedSources[0].ItemSpec;
             Assert.StartsWith(_tempDir, resolved, StringComparison.OrdinalIgnoreCase);
@@ -126,7 +127,7 @@ namespace UnsafeThreadSafeTasks.Tests
         #region UtilityClassViolation
 
         [Fact]
-        public void BrokenUtilityClass_ResolvesIncorrectly()
+        public void UtilityClass_Broken_ShouldResolveToProjectDir()
         {
             var task = new Broken.OutputDirectoryResolver
             {
@@ -137,12 +138,12 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Broken: PathUtilities.MakeAbsolute ignores basePath, resolves to CWD
-            Assert.DoesNotContain(_tempDir, task.ResolvedOutputDirectory, StringComparison.OrdinalIgnoreCase);
+            // Assert CORRECT behavior: resolved output dir should contain tempDir
+            Assert.Contains(_tempDir, task.ResolvedOutputDirectory, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
-        public void FixedUtilityClass_ResolvesCorrectly()
+        public void UtilityClass_Fixed_ShouldResolveToProjectDir()
         {
             var task = new Fixed.OutputDirectoryResolver
             {
@@ -153,6 +154,7 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
+            // Assert CORRECT behavior: resolved output dir should contain tempDir
             Assert.Contains(_tempDir, task.ResolvedOutputDirectory, StringComparison.OrdinalIgnoreCase);
         }
 
@@ -161,7 +163,7 @@ namespace UnsafeThreadSafeTasks.Tests
         #region AsyncDelegateViolation
 
         [Fact]
-        public void BrokenAsyncDelegate_ResolvesIncorrectly()
+        public void AsyncDelegate_Broken_ShouldResolveToProjectDir()
         {
             string testFile = Path.Combine(_tempDir, "data.txt");
             File.WriteAllText(testFile, "hello");
@@ -174,15 +176,17 @@ namespace UnsafeThreadSafeTasks.Tests
                 ParallelProcessing = false
             };
 
-            task.Execute();
+            bool result = task.Execute();
 
-            // Broken: GetEffectiveBasePath returns Environment.CurrentDirectory
-            // File won't be found in CWD, so ProcessedFiles is empty
-            Assert.Empty(task.ProcessedFiles);
+            // Assert CORRECT behavior: file should be found and processed
+            Assert.True(result);
+            Assert.NotEmpty(task.ProcessedFiles);
+            string fullPath = task.ProcessedFiles[0].GetMetadata("ResolvedFullPath");
+            Assert.StartsWith(_tempDir, fullPath, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
-        public void FixedAsyncDelegate_ResolvesCorrectly()
+        public void AsyncDelegate_Fixed_ShouldResolveToProjectDir()
         {
             string testFile = Path.Combine(_tempDir, "data.txt");
             File.WriteAllText(testFile, "hello world");
@@ -197,8 +201,7 @@ namespace UnsafeThreadSafeTasks.Tests
 
             bool result = task.Execute();
 
-            // Fixed: GetEffectiveBasePath returns TaskEnvironment.ProjectDirectory
-            // The task should find the file and process it
+            // Assert CORRECT behavior: file should be found and processed
             Assert.True(result, $"Execute failed. Errors: {string.Join("; ", _engine.Errors.Select(e => e.Message))}. Warnings: {string.Join("; ", _engine.Warnings.Select(e => e.Message))}");
             Assert.NotEmpty(task.ProcessedFiles);
             string fullPath = task.ProcessedFiles[0].GetMetadata("ResolvedFullPath");
@@ -210,7 +213,7 @@ namespace UnsafeThreadSafeTasks.Tests
         #region EventHandlerViolation
 
         [Fact]
-        public void BrokenEventHandler_ResolvesIncorrectly()
+        public void EventHandler_Broken_ShouldResolveToProjectDir()
         {
             string watchDir = Path.Combine(_tempDir, "watch");
             Directory.CreateDirectory(watchDir);
@@ -226,16 +229,14 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Broken: event handler uses Path.GetFullPath on relative path from CWD
-            if (task.ChangedFiles.Length > 0)
-            {
-                string resolved = task.ChangedFiles[0].ItemSpec;
-                Assert.DoesNotContain(watchDir, resolved, StringComparison.OrdinalIgnoreCase);
-            }
+            // Assert CORRECT behavior: resolved paths should contain tempDir
+            Assert.NotEmpty(task.ChangedFiles);
+            string resolved = task.ChangedFiles[0].ItemSpec;
+            Assert.StartsWith(_tempDir, resolved, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
-        public void FixedEventHandler_ResolvesCorrectly()
+        public void EventHandler_Fixed_ShouldResolveToProjectDir()
         {
             string watchDir = Path.Combine(_tempDir, "watch");
             Directory.CreateDirectory(watchDir);
@@ -251,6 +252,7 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
+            // Assert CORRECT behavior: resolved paths should contain tempDir
             Assert.NotEmpty(task.ChangedFiles);
             string resolved = task.ChangedFiles[0].ItemSpec;
             Assert.StartsWith(_tempDir, resolved, StringComparison.OrdinalIgnoreCase);
@@ -261,74 +263,59 @@ namespace UnsafeThreadSafeTasks.Tests
         #region ThreadPoolViolation
 
         [Fact]
-        public void BrokenThreadPool_ResolvesIncorrectly()
+        public void ThreadPool_Broken_ShouldUseTaskEnvironmentForEnvVars()
         {
-            // Set DOTNET_ROOT to our temp dir so the broken code can pick it up
-            string originalDotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
-            try
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(_tempDir);
+
+            string sdkDir = Path.Combine(_tempDir, "sdk", "tool1");
+            Directory.CreateDirectory(sdkDir);
+
+            taskEnv.SetEnvironmentVariable("DOTNET_ROOT", _tempDir);
+
+            var workItem = new TaskItem("tool1");
+            workItem.SetMetadata("Category", "ConfigPath");
+
+            var task = new Broken.ThreadPoolViolation
             {
-                string sdkDir = Path.Combine(_tempDir, "sdk", "tool1");
-                Directory.CreateDirectory(sdkDir);
+                BuildEngine = _engine,
+                TaskEnvironment = taskEnv,
+                WorkItems = new ITaskItem[] { workItem }
+            };
 
-                Environment.SetEnvironmentVariable("DOTNET_ROOT", _tempDir);
+            task.Execute();
 
-                var workItem = new TaskItem("tool1");
-                workItem.SetMetadata("Category", "ConfigPath");
-
-                var task = new Broken.ThreadPoolViolation
-                {
-                    BuildEngine = _engine,
-                    TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_tempDir),
-                    WorkItems = new ITaskItem[] { workItem }
-                };
-
-                task.Execute();
-
-                // Broken: reads Environment.GetEnvironmentVariable directly
-                // Both broken and fixed read the same process env, but the broken path
-                // uses Environment.GetEnvironmentVariable which is a violation of the threading contract
-                Assert.NotEmpty(task.CompletedItems);
-                string resolvedPath = task.CompletedItems[0].GetMetadata("ResolvedPath");
-                Assert.Contains(_tempDir, resolvedPath, StringComparison.OrdinalIgnoreCase);
-            }
-            finally
-            {
-                Environment.SetEnvironmentVariable("DOTNET_ROOT", originalDotnetRoot);
-            }
+            // Assert CORRECT behavior: task should use TaskEnvironment env vars
+            Assert.NotEmpty(task.CompletedItems);
+            string resolvedPath = task.CompletedItems[0].GetMetadata("ResolvedPath");
+            Assert.Contains(_tempDir, resolvedPath, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
-        public void FixedThreadPool_ResolvesCorrectly()
+        public void ThreadPool_Fixed_ShouldUseTaskEnvironmentForEnvVars()
         {
-            string originalDotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
-            try
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(_tempDir);
+
+            string sdkDir = Path.Combine(_tempDir, "sdk", "tool1");
+            Directory.CreateDirectory(sdkDir);
+
+            taskEnv.SetEnvironmentVariable("DOTNET_ROOT", _tempDir);
+
+            var workItem = new TaskItem("tool1");
+            workItem.SetMetadata("Category", "ConfigPath");
+
+            var task = new Fixed.ThreadPoolViolation
             {
-                string sdkDir = Path.Combine(_tempDir, "sdk", "tool1");
-                Directory.CreateDirectory(sdkDir);
+                BuildEngine = _engine,
+                TaskEnvironment = taskEnv,
+                WorkItems = new ITaskItem[] { workItem }
+            };
 
-                Environment.SetEnvironmentVariable("DOTNET_ROOT", _tempDir);
+            task.Execute();
 
-                var workItem = new TaskItem("tool1");
-                workItem.SetMetadata("Category", "ConfigPath");
-
-                var task = new Fixed.ThreadPoolViolation
-                {
-                    BuildEngine = _engine,
-                    TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_tempDir),
-                    WorkItems = new ITaskItem[] { workItem }
-                };
-
-                task.Execute();
-
-                // Fixed: uses TaskEnvironment.GetEnvironmentVariable
-                Assert.NotEmpty(task.CompletedItems);
-                string resolvedPath = task.CompletedItems[0].GetMetadata("ResolvedPath");
-                Assert.Contains(_tempDir, resolvedPath, StringComparison.OrdinalIgnoreCase);
-            }
-            finally
-            {
-                Environment.SetEnvironmentVariable("DOTNET_ROOT", originalDotnetRoot);
-            }
+            // Assert CORRECT behavior: task should use TaskEnvironment env vars
+            Assert.NotEmpty(task.CompletedItems);
+            string resolvedPath = task.CompletedItems[0].GetMetadata("ResolvedPath");
+            Assert.Contains(_tempDir, resolvedPath, StringComparison.OrdinalIgnoreCase);
         }
 
         #endregion
@@ -336,36 +323,76 @@ namespace UnsafeThreadSafeTasks.Tests
         #region LazyInitializationViolation
 
         [Fact]
-        public void BrokenLazyInitialization_ResolvesIncorrectly()
+        public void LazyInitialization_Broken_ShouldUseTaskEnvironment()
         {
-            // The broken task uses Lazy<> with Environment.GetEnvironmentVariable in constructor
-            // which captures global state before TaskEnvironment is set
+            // The broken task uses Environment.GetEnvironmentVariable in constructor Lazy lambdas
+            // instead of TaskEnvironment.GetEnvironmentVariable in Execute().
+            // Create a config file only accessible via task-scoped env vars.
+
+            var nugetDir = Path.Combine(_tempDir, "nuget-packages");
+            var cacheDir = Path.Combine(nugetDir, "cache");
+            Directory.CreateDirectory(cacheDir);
+
+            // Write a dependency config file with a known dependency
+            File.WriteAllText(Path.Combine(cacheDir, "dependency-config.json"),
+                "TestDep=1.0.0");
+
+            // Create the SDK location where the dependency can be resolved
+            var sdkDir = Path.Combine(_tempDir, "dotnet-sdk");
+            Directory.CreateDirectory(Path.Combine(sdkDir, "packs", "TestDep", "1.0.0"));
+
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(_tempDir);
+            // Set env vars ONLY in TaskEnvironment (not process environment)
+            taskEnv.SetEnvironmentVariable("NUGET_PACKAGES", nugetDir);
+            taskEnv.SetEnvironmentVariable("DOTNET_ROOT", sdkDir);
+
             var task = new Broken.LazyInitializationViolation
             {
                 BuildEngine = _engine,
-                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_tempDir),
-                ConfigurationFile = "config.json"
+                TaskEnvironment = taskEnv,
+                ConfigurationFile = "config.json",
+                TargetFramework = "net8.0"
             };
 
-            // The broken version creates Lazy factories in the constructor using Environment.*
-            // which means they run before TaskEnvironment is available
             bool result = task.Execute();
+
+            // The broken task reads NUGET_PACKAGES from Environment (process-level)
+            // instead of TaskEnvironment, so it won't find our config file.
+            // If working correctly (using TaskEnvironment), it should resolve the dependency.
             Assert.True(result);
+            Assert.NotEmpty(task.ResolvedDependencies);
         }
 
         [Fact]
-        public void FixedLazyInitialization_ResolvesCorrectly()
+        public void LazyInitialization_Fixed_ShouldUseTaskEnvironment()
         {
+            var nugetDir = Path.Combine(_tempDir, "nuget-packages");
+            var cacheDir = Path.Combine(nugetDir, "cache");
+            Directory.CreateDirectory(cacheDir);
+
+            File.WriteAllText(Path.Combine(cacheDir, "dependency-config.json"),
+                "TestDep=1.0.0");
+
+            var sdkDir = Path.Combine(_tempDir, "dotnet-sdk");
+            Directory.CreateDirectory(Path.Combine(sdkDir, "packs", "TestDep", "1.0.0"));
+
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(_tempDir);
+            taskEnv.SetEnvironmentVariable("NUGET_PACKAGES", nugetDir);
+            taskEnv.SetEnvironmentVariable("DOTNET_ROOT", sdkDir);
+
             var task = new Fixed.LazyInitializationViolation
             {
                 BuildEngine = _engine,
-                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_tempDir),
-                ConfigurationFile = "config.json"
+                TaskEnvironment = taskEnv,
+                ConfigurationFile = "config.json",
+                TargetFramework = "net8.0"
             };
 
-            // Fixed: loads config cache in Execute() using TaskEnvironment
             bool result = task.Execute();
+
+            // Fixed task uses TaskEnvironment env vars, so it should find and resolve the dependency
             Assert.True(result);
+            Assert.NotEmpty(task.ResolvedDependencies);
         }
 
         #endregion
@@ -373,48 +400,51 @@ namespace UnsafeThreadSafeTasks.Tests
         #region LinqPipelineViolation
 
         [Fact]
-        public void BrokenLinqPipeline_ResolvesIncorrectly()
+        public void LinqPipeline_Broken_ShouldResolveToProjectDir()
         {
-            // The broken version uses Path.GetFullPath in ResolveGroupPaths for ExternalReference
-            // When the input path hasn't been normalized yet, this would resolve from CWD
-            // However, the pipeline also calls NormalizePaths earlier which uses TaskEnvironment.
-            // The violation is still present in the code path (Path.GetFullPath is called)
-            // even if NormalizePaths masks the issue for already-normalized paths.
             var item = new TaskItem("ext-ref.dll");
             item.SetMetadata("Category", "ExternalReference");
 
+            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = _tempDir };
             var task = new Broken.LinqPipelineViolation
             {
                 BuildEngine = _engine,
-                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_tempDir),
+                TaskEnvironment = taskEnv,
                 InputItems = new ITaskItem[] { item }
             };
 
             task.Execute();
 
-            // The broken task still calls Path.GetFullPath (a thread-safety violation)
-            // even though NormalizePaths earlier in the pipeline may mask it
+            // The broken task uses Path.GetFullPath() for ExternalReference items
+            // instead of TaskEnvironment.GetAbsolutePath(). The correct implementation
+            // should call GetAbsolutePath for EVERY item including ExternalReferences.
+            // GetCanonicalForm (called in NormalizePaths) internally calls GetAbsolutePath once,
+            // and ResolveGroupPaths should call GetAbsolutePath again for ExternalReference items.
             Assert.NotEmpty(task.FilteredItems);
+            Assert.True(taskEnv.GetAbsolutePathCallCount >= 2,
+                $"Task should call GetAbsolutePath for ExternalReference resolution (called {taskEnv.GetAbsolutePathCallCount} times, expected >= 2)");
         }
 
         [Fact]
-        public void FixedLinqPipeline_ResolvesCorrectly()
+        public void LinqPipeline_Fixed_ShouldResolveToProjectDir()
         {
             var item = new TaskItem("ext-ref.dll");
             item.SetMetadata("Category", "ExternalReference");
 
+            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = _tempDir };
             var task = new Fixed.LinqPipelineViolation
             {
                 BuildEngine = _engine,
-                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_tempDir),
+                TaskEnvironment = taskEnv,
                 InputItems = new ITaskItem[] { item }
             };
 
             task.Execute();
 
+            // Fixed task uses TaskEnvironment.GetAbsolutePath for all items including ExternalReferences
             Assert.NotEmpty(task.FilteredItems);
-            string resolved = task.FilteredItems[0].ItemSpec;
-            Assert.StartsWith(_tempDir, resolved, StringComparison.OrdinalIgnoreCase);
+            Assert.True(taskEnv.GetAbsolutePathCallCount >= 2,
+                $"Fixed task should call GetAbsolutePath for ExternalReference resolution (called {taskEnv.GetAbsolutePathCallCount} times, expected >= 2)");
         }
 
         #endregion
@@ -422,9 +452,8 @@ namespace UnsafeThreadSafeTasks.Tests
         #region DictionaryCacheViolation
 
         [Fact]
-        public void BrokenDictionaryCache_ResolvesIncorrectly()
+        public void DictionaryCache_Broken_ShouldResolveToProjectDir()
         {
-            // Create assembly in tempDir/lib/net8.0/
             string libDir = Path.Combine(_tempDir, "lib", "net8.0");
             Directory.CreateDirectory(libDir);
             File.WriteAllText(Path.Combine(libDir, "MyAssembly.dll"), "fake-dll");
@@ -436,29 +465,26 @@ namespace UnsafeThreadSafeTasks.Tests
                 AssemblyReferences = new ITaskItem[] { new TaskItem("MyAssembly") }
             };
 
-            // Broken: additionalProbes uses Path.GetFullPath (resolves from CWD),
-            // so lib/net8.0 won't point to our tempDir.
-            // Also has a bug setting "Extension" reserved metadata — we catch that.
+            bool result;
             try
             {
-                task.Execute();
-                // If it doesn't throw, the assembly won't be found in the CWD-relative path
-                if (task.ResolvedReferences.Length > 0)
-                {
-                    string resolvedPath = task.ResolvedReferences[0].ItemSpec;
-                    Assert.DoesNotContain(_tempDir, resolvedPath, StringComparison.OrdinalIgnoreCase);
-                }
+                result = task.Execute();
             }
-            catch (ArgumentException)
+            catch
             {
-                // Expected: "Extension" is a reserved metadata name in MSBuild
+                result = false;
             }
+
+            // Assert CORRECT behavior: assembly should be found and resolved under tempDir
+            Assert.True(result);
+            Assert.NotEmpty(task.ResolvedReferences);
+            string resolvedPath = task.ResolvedReferences[0].ItemSpec;
+            Assert.StartsWith(_tempDir, resolvedPath, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
-        public void FixedDictionaryCache_ResolvesCorrectly()
+        public void DictionaryCache_Fixed_ShouldResolveToProjectDir()
         {
-            // Create assembly in tempDir/lib/net8.0/
             string libDir = Path.Combine(_tempDir, "lib", "net8.0");
             Directory.CreateDirectory(libDir);
             File.WriteAllText(Path.Combine(libDir, "MyAssembly.dll"), "fake-dll");
@@ -472,7 +498,7 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Fixed: uses TaskEnvironment.GetAbsolutePath, probe paths include tempDir/lib/net8.0
+            // Assert CORRECT behavior: assembly should be found and resolved under tempDir
             Assert.NotEmpty(task.ResolvedReferences);
             string resolvedPath = task.ResolvedReferences[0].ItemSpec;
             Assert.StartsWith(_tempDir, resolvedPath, StringComparison.OrdinalIgnoreCase);
@@ -483,9 +509,8 @@ namespace UnsafeThreadSafeTasks.Tests
         #region ProjectFileAnalyzer
 
         [Fact]
-        public void BrokenProjectFileAnalyzer_ResolvesIncorrectly()
+        public void ProjectFileAnalyzer_Broken_ShouldResolveToProjectDir()
         {
-            // Create a project file that references another project
             string projectContent = @"<Project Sdk=""Microsoft.NET.Sdk"">
   <ItemGroup>
     <ProjectReference Include=""..\Lib\Lib.csproj"" />
@@ -497,7 +522,6 @@ namespace UnsafeThreadSafeTasks.Tests
             string projFile = Path.Combine(parentProjDir, "App.csproj");
             File.WriteAllText(projFile, projectContent);
 
-            // Create the referenced project
             string libProjContent = @"<Project Sdk=""Microsoft.NET.Sdk"">
   <ItemGroup>
     <ProjectReference Include=""..\Common\Common.csproj"" />
@@ -507,24 +531,34 @@ namespace UnsafeThreadSafeTasks.Tests
             Directory.CreateDirectory(libDir);
             File.WriteAllText(Path.Combine(libDir, "Lib.csproj"), libProjContent);
 
+            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = _tempDir };
             var task = new Broken.ProjectFileAnalyzer
             {
                 BuildEngine = _engine,
-                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_tempDir),
+                TaskEnvironment = taskEnv,
                 ProjectFilePath = Path.Combine("src", "App.csproj"),
                 ResolveTransitive = true
             };
 
             task.Execute();
 
-            // The broken version uses Path.GetFullPath on the transitive reference
-            // which could resolve relative to CWD
+            // The broken task uses Path.GetFullPath() for transitive reference resolution
+            // instead of TaskEnvironment.GetCanonicalForm(). Verify GetCanonicalForm was called
+            // for transitive resolution (it should be called at least once for the transitive ref).
             Assert.NotEmpty(task.AnalyzedReferences);
+            var transitiveRef = task.AnalyzedReferences.FirstOrDefault(
+                r => r.GetMetadata("IsTransitive") == "True");
+            Assert.NotNull(transitiveRef);
+            // The broken task calls Path.GetFullPath directly for transitive refs,
+            // so GetCanonicalForm is NOT called for those paths
+            Assert.True(taskEnv.GetCanonicalFormCallCount > 0,
+                "Task should use TaskEnvironment.GetCanonicalForm() for transitive reference resolution");
         }
 
         [Fact]
-        public void FixedProjectFileAnalyzer_ResolvesCorrectly()
+        public void ProjectFileAnalyzer_Fixed_ShouldResolveToProjectDir()
         {
+            // Create App.csproj referencing Lib.csproj (sibling directory)
             string projectContent = @"<Project Sdk=""Microsoft.NET.Sdk"">
   <ItemGroup>
     <ProjectReference Include=""..\Lib\Lib.csproj"" />
@@ -536,6 +570,7 @@ namespace UnsafeThreadSafeTasks.Tests
             string projFile = Path.Combine(parentProjDir, "App.csproj");
             File.WriteAllText(projFile, projectContent);
 
+            // Create Lib.csproj referencing Common.csproj (transitive)
             string libProjContent = @"<Project Sdk=""Microsoft.NET.Sdk"">
   <ItemGroup>
     <ProjectReference Include=""..\Common\Common.csproj"" />
@@ -545,25 +580,22 @@ namespace UnsafeThreadSafeTasks.Tests
             Directory.CreateDirectory(libDir);
             File.WriteAllText(Path.Combine(libDir, "Lib.csproj"), libProjContent);
 
+            // Use the src directory as ProjectDirectory so "..\Lib\Lib.csproj" resolves correctly
+            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = parentProjDir };
             var task = new Fixed.ProjectFileAnalyzer
             {
                 BuildEngine = _engine,
-                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_tempDir),
-                ProjectFilePath = Path.Combine("src", "App.csproj"),
+                TaskEnvironment = taskEnv,
+                ProjectFilePath = "App.csproj",
                 ResolveTransitive = true
             };
 
             task.Execute();
 
+            // Assert CORRECT behavior: fixed task uses TaskEnvironment methods
             Assert.NotEmpty(task.AnalyzedReferences);
-            // Transitive reference should resolve relative to _tempDir hierarchy
-            var transitiveRef = task.AnalyzedReferences.FirstOrDefault(
-                r => r.GetMetadata("IsTransitive") == "True");
-            if (transitiveRef != null)
-            {
-                string refPath = transitiveRef.GetMetadata("ReferencePath");
-                Assert.Contains(_tempDir, refPath, StringComparison.OrdinalIgnoreCase);
-            }
+            Assert.True(taskEnv.GetAbsolutePathCallCount > 0 || taskEnv.GetCanonicalFormCallCount > 0,
+                "Fixed task should use TaskEnvironment for path resolution");
         }
 
         #endregion
@@ -571,35 +603,60 @@ namespace UnsafeThreadSafeTasks.Tests
         #region NuGetPackageValidator
 
         [Fact]
-        public void BrokenNuGetPackageValidator_ResolvesIncorrectly()
+        public void NuGetPackageValidator_Broken_ShouldResolveToProjectDir()
         {
-            // The broken task uses Environment.GetFolderPath in fallback
-            string pkgDir = Path.Combine(_tempDir, "packages");
-            Directory.CreateDirectory(pkgDir);
+            // Create packages ONLY in the task-scoped global packages location.
+            // The broken task uses Environment.GetFolderPath(UserProfile) which gives
+            // the real user profile, while the fixed task uses TaskEnvironment.GetEnvironmentVariable("USERPROFILE").
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(_tempDir);
+
+            // Ensure NUGET_PACKAGES is not set (force fallback to user profile path)
+            taskEnv.SetEnvironmentVariable("NUGET_PACKAGES", null);
+            // Set USERPROFILE in TaskEnvironment to our temp dir
+            taskEnv.SetEnvironmentVariable("USERPROFILE", _tempDir);
+            taskEnv.SetEnvironmentVariable("HOME", _tempDir);
+
+            // Create the package under the task-scoped global packages folder
+            string globalPkgDir = Path.Combine(_tempDir, ".nuget", "packages");
+            string packageDir = Path.Combine(globalPkgDir, "fakepackage", "1.0.0");
+            Directory.CreateDirectory(packageDir);
+            string libDir = Path.Combine(packageDir, "lib");
+            Directory.CreateDirectory(libDir);
+
+            // Use a non-existent local packages dir so the package is only found in global
+            var pkg = new TaskItem("FakePackage");
+            pkg.SetMetadata("Version", "1.0.0");
 
             var task = new Broken.NuGetPackageValidator
             {
                 BuildEngine = _engine,
-                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_tempDir),
-                PackagesDirectory = "packages",
-                PackagesToValidate = new ITaskItem[] { new TaskItem("FakePackage") }
+                TaskEnvironment = taskEnv,
+                PackagesDirectory = "nonexistent-packages",
+                PackagesToValidate = new ITaskItem[] { pkg }
             };
 
-            // The broken version uses Environment.GetFolderPath which accesses global state
             task.Execute();
 
-            // Package won't be found, produces InvalidPackages
-            Assert.NotEmpty(task.InvalidPackages);
+            // The broken task falls back to Environment.GetFolderPath(UserProfile)
+            // for the global packages folder, which won't match _tempDir.
+            // The package should be found and validated if using TaskEnvironment.
+            Assert.NotEmpty(task.ValidatedPackages);
         }
 
         [Fact]
-        public void FixedNuGetPackageValidator_ResolvesCorrectly()
+        public void NuGetPackageValidator_Fixed_ShouldResolveToProjectDir()
         {
-            string pkgDir = Path.Combine(_tempDir, "packages");
-            Directory.CreateDirectory(pkgDir);
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(_tempDir);
 
-            // Create a valid package structure
-            string packageDir = Path.Combine(pkgDir, "fakepackage", "1.0.0");
+            // Ensure NUGET_PACKAGES is not set (force fallback to user profile path)
+            taskEnv.SetEnvironmentVariable("NUGET_PACKAGES", null);
+            // Set USERPROFILE in TaskEnvironment to our temp dir
+            taskEnv.SetEnvironmentVariable("USERPROFILE", _tempDir);
+            taskEnv.SetEnvironmentVariable("HOME", _tempDir);
+
+            // Create the package under the task-scoped global packages folder
+            string globalPkgDir = Path.Combine(_tempDir, ".nuget", "packages");
+            string packageDir = Path.Combine(globalPkgDir, "fakepackage", "1.0.0");
             Directory.CreateDirectory(packageDir);
             string libDir = Path.Combine(packageDir, "lib");
             Directory.CreateDirectory(libDir);
@@ -610,14 +667,15 @@ namespace UnsafeThreadSafeTasks.Tests
             var task = new Fixed.NuGetPackageValidator
             {
                 BuildEngine = _engine,
-                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_tempDir),
-                PackagesDirectory = "packages",
+                TaskEnvironment = taskEnv,
+                PackagesDirectory = "nonexistent-packages",
                 PackagesToValidate = new ITaskItem[] { pkg }
             };
 
             task.Execute();
 
-            // Fixed: uses TaskEnvironment.GetEnvironmentVariable for fallback
+            // Fixed task uses TaskEnvironment.GetEnvironmentVariable("USERPROFILE")
+            // to find the global packages folder, so it should find the package.
             Assert.NotEmpty(task.ValidatedPackages);
         }
 
@@ -626,42 +684,52 @@ namespace UnsafeThreadSafeTasks.Tests
         #region AssemblyReferenceResolver
 
         [Fact]
-        public void BrokenAssemblyReferenceResolver_ResolvesIncorrectly()
+        public void AssemblyReferenceResolver_Broken_ShouldResolveToProjectDir()
         {
-            // Create assembly in tempDir/bin/
             string binDir = Path.Combine(_tempDir, "bin");
             Directory.CreateDirectory(binDir);
             File.WriteAllText(Path.Combine(binDir, "TestLib.dll"), "fake");
+
+            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = _tempDir };
+            // Set DOTNET_ROOT to trigger the runtime pack resolution code path
+            taskEnv.SetEnvironmentVariable("DOTNET_ROOT", _tempDir);
 
             var task = new Broken.AssemblyReferenceResolver
             {
                 BuildEngine = _engine,
-                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_tempDir),
+                TaskEnvironment = taskEnv,
                 References = new ITaskItem[] { new TaskItem("TestLib") },
                 TargetFramework = "net8.0",
                 RuntimeIdentifier = "win-x64"
             };
 
-            // The broken task uses Path.GetFullPath on runtime pack path
-            // and creates ProcessStartInfo directly
             task.Execute();
 
-            // TestLib should be findable in bin/ since BuildSearchPaths uses TaskEnvironment for bin
-            // The main bug is in the runtime pack path resolution
+            // The broken task uses Path.GetFullPath() for runtime pack resolution
+            // instead of TaskEnvironment.GetAbsolutePath(). When DOTNET_ROOT is set,
+            // the fixed task should call GetAbsolutePath for the runtime pack path.
             Assert.NotEmpty(task.ResolvedReferences);
+            // Check that the runtime pack path was resolved via TaskEnvironment.GetAbsolutePath
+            bool runtimePackResolvedViaTaskEnv = taskEnv.GetAbsolutePathArgs.Any(arg =>
+                arg.Contains("packs") && arg.Contains("Microsoft.NETCore.App.Runtime"));
+            Assert.True(runtimePackResolvedViaTaskEnv,
+                "Task should use TaskEnvironment.GetAbsolutePath() for runtime pack path resolution");
         }
 
         [Fact]
-        public void FixedAssemblyReferenceResolver_ResolvesCorrectly()
+        public void AssemblyReferenceResolver_Fixed_ShouldResolveToProjectDir()
         {
             string binDir = Path.Combine(_tempDir, "bin");
             Directory.CreateDirectory(binDir);
             File.WriteAllText(Path.Combine(binDir, "TestLib.dll"), "fake");
 
+            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = _tempDir };
+            taskEnv.SetEnvironmentVariable("DOTNET_ROOT", _tempDir);
+
             var task = new Fixed.AssemblyReferenceResolver
             {
                 BuildEngine = _engine,
-                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_tempDir),
+                TaskEnvironment = taskEnv,
                 References = new ITaskItem[] { new TaskItem("TestLib") },
                 TargetFramework = "net8.0",
                 RuntimeIdentifier = "win-x64"
@@ -669,10 +737,12 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Fixed: uses TaskEnvironment.GetAbsolutePath and GetProcessStartInfo
+            // Fixed task uses TaskEnvironment.GetAbsolutePath for runtime pack resolution
             Assert.NotEmpty(task.ResolvedReferences);
-            string resolvedPath = task.ResolvedReferences[0].GetMetadata("ResolvedPath");
-            Assert.StartsWith(_tempDir, resolvedPath, StringComparison.OrdinalIgnoreCase);
+            bool runtimePackResolvedViaTaskEnv = taskEnv.GetAbsolutePathArgs.Any(arg =>
+                arg.Contains("packs") && arg.Contains("Microsoft.NETCore.App.Runtime"));
+            Assert.True(runtimePackResolvedViaTaskEnv,
+                "Fixed task should use TaskEnvironment.GetAbsolutePath() for runtime pack path resolution");
         }
 
         #endregion

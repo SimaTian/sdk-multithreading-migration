@@ -11,19 +11,19 @@ namespace FixedThreadSafeTasks.ComplexViolations
     [MSBuildMultiThreadableTask]
     public class LinqPipelineViolation : Microsoft.Build.Utilities.Task, IMultiThreadableTask
     {
-        public TaskEnvironment TaskEnvironment { get; set; }
+        public TaskEnvironment TaskEnvironment { get; set; } = null!;
 
         [Required]
-        public ITaskItem[] InputItems { get; set; }
+        public ITaskItem[] InputItems { get; set; } = Array.Empty<ITaskItem>();
 
         [Output]
-        public ITaskItem[] FilteredItems { get; set; }
+        public ITaskItem[] FilteredItems { get; set; } = Array.Empty<ITaskItem>();
 
-        public string FilterPattern { get; set; }
+        public string FilterPattern { get; set; } = string.Empty;
 
         public bool IncludeMetadata { get; set; }
 
-        public string OutputDirectory { get; set; }
+        public string OutputDirectory { get; set; } = string.Empty;
 
         internal record ItemData(string Path, string Category, Dictionary<string, string> Metadata);
 

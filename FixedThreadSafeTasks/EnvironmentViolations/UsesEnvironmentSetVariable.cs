@@ -8,7 +8,7 @@ namespace FixedThreadSafeTasks.EnvironmentViolations
     [MSBuildMultiThreadableTask]
     public class UsesEnvironmentSetVariable : MSBuildTask, IMultiThreadableTask
     {
-        public TaskEnvironment TaskEnvironment { get; set; }
+        public TaskEnvironment TaskEnvironment { get; set; } = null!;
 
         public string? VariableName { get; set; }
 
@@ -16,7 +16,7 @@ namespace FixedThreadSafeTasks.EnvironmentViolations
 
         public override bool Execute()
         {
-            TaskEnvironment.SetEnvironmentVariable(VariableName, VariableValue);
+            TaskEnvironment.SetEnvironmentVariable(VariableName!, VariableValue);
             return true;
         }
     }

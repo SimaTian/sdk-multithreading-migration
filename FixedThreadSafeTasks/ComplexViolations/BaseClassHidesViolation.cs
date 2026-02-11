@@ -10,7 +10,7 @@ namespace FixedThreadSafeTasks.ComplexViolations
 {
     public abstract class PathResolvingTaskBase : MSBuildTask, IMultiThreadableTask
     {
-        public TaskEnvironment TaskEnvironment { get; set; }
+        public TaskEnvironment TaskEnvironment { get; set; } = null!;
 
         protected string GetMetadata(ITaskItem item, string key)
         {
@@ -51,13 +51,13 @@ namespace FixedThreadSafeTasks.ComplexViolations
     public class DerivedFileProcessor : PathResolvingTaskBase
     {
         [Required]
-        public ITaskItem[] Sources { get; set; }
+        public ITaskItem[] Sources { get; set; } = Array.Empty<ITaskItem>();
 
         [Output]
-        public string ResolvedRoot { get; set; }
+        public string? ResolvedRoot { get; set; }
 
         [Output]
-        public ITaskItem[] ResolvedSources { get; set; }
+        public ITaskItem[] ResolvedSources { get; set; } = Array.Empty<ITaskItem>();
 
         public override bool Execute()
         {
@@ -72,7 +72,7 @@ namespace FixedThreadSafeTasks.ComplexViolations
             LogInfo("Processing {0} source file(s).", Sources.Length);
 
             var resolvedItems = new List<ITaskItem>();
-            string commonRoot = null;
+            string? commonRoot = null;
 
             foreach (var source in Sources)
             {
@@ -80,8 +80,8 @@ namespace FixedThreadSafeTasks.ComplexViolations
                 if (resolved != null)
                 {
                     resolvedItems.Add(resolved);
-                    string dir = Path.GetDirectoryName(resolved.ItemSpec);
-                    commonRoot = commonRoot == null ? dir : FindCommonPrefix(commonRoot, dir);
+                    string? dir = Path.GetDirectoryName(resolved.ItemSpec);
+                    commonRoot = commonRoot == null ? dir : FindCommonPrefix(commonRoot, dir!);
                 }
             }
 
@@ -91,7 +91,7 @@ namespace FixedThreadSafeTasks.ComplexViolations
             return !Log.HasLoggedErrors;
         }
 
-        private ITaskItem ProcessSource(ITaskItem item)
+        private ITaskItem? ProcessSource(ITaskItem item)
         {
             string rawPath = item.ItemSpec;
             string resolved = ResolvePath(rawPath);

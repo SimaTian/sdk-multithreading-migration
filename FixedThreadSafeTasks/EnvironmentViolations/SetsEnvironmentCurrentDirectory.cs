@@ -8,7 +8,7 @@ namespace FixedThreadSafeTasks.EnvironmentViolations
     [MSBuildMultiThreadableTask]
     public class SetsEnvironmentCurrentDirectory : MSBuildTask, IMultiThreadableTask
     {
-        public TaskEnvironment TaskEnvironment { get; set; }
+        public TaskEnvironment TaskEnvironment { get; set; } = null!;
 
         public string? NewDirectory { get; set; }
 
