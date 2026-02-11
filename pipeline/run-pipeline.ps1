@@ -58,7 +58,11 @@ function Invoke-CopilotAgent {
         New-Item -ItemType Directory -Path $iterLogDir -Force | Out-Null
     }
 
-    Write-Host "  [$Label] Starting agent..." -ForegroundColor Yellow
+    $ts = Get-Date -Format "HH:mm:ss"
+    Write-Host "  [$ts][$Label] Starting agent..." -ForegroundColor Yellow
+    Write-Host "  [$ts][$Label]   WorkingDir: $WorkingDir" -ForegroundColor DarkGray
+    Write-Host "  [$ts][$Label]   LogFile:    $LogFile" -ForegroundColor DarkGray
+    Write-Host "  [$ts][$Label]   Prompt:     $($Prompt.Length) chars" -ForegroundColor DarkGray
 
     # Write prompt to a temp file to avoid argument quoting issues
     $promptFile = "$LogFile.prompt.txt"
@@ -85,13 +89,23 @@ exit `$LASTEXITCODE
     $duration = (Get-Date) - $startTime
 
     $exitCode = $proc.ExitCode
+    $ts = Get-Date -Format "HH:mm:ss"
     $status = if ($exitCode -eq 0) { "OK" } else { "FAIL (exit $exitCode)" }
-    Write-Host "  [$Label] $status ($('{0:mm\:ss}' -f $duration))" -ForegroundColor $(if ($exitCode -eq 0) { "Green" } else { "Red" })
+    $color = if ($exitCode -eq 0) { "Green" } else { "Red" }
+    Write-Host "  [$ts][$Label] $status ($('{0:mm\:ss}' -f $duration))" -ForegroundColor $color
 
-    # Capture stdout content
+    # Capture stdout content and show summary
     $stdout = ""
     if (Test-Path "$LogFile.stdout") {
         $stdout = Get-Content "$LogFile.stdout" -Raw -ErrorAction SilentlyContinue
+        if ($stdout) {
+            $lines = @($stdout -split "`n" | Where-Object { $_.Trim() })
+            Write-Host "  [$ts][$Label]   Output: $($lines.Count) lines" -ForegroundColor DarkGray
+            # Show last non-empty line as summary
+            $lastLine = $lines[-1].Trim()
+            if ($lastLine.Length -gt 120) { $lastLine = $lastLine.Substring(0, 117) + "..." }
+            Write-Host "  [$ts][$Label]   Last:   $lastLine" -ForegroundColor DarkGray
+        }
     }
 
     # Clean up temp files
@@ -336,7 +350,8 @@ function Invoke-Phase3 {
         $fullTaskPath = Join-Path $testTasksRepo "src\SdkTasks\$filePath"
 
         Write-Host ""
-        Write-Host "  ── Task $taskIndex/$($tasks.Count): $className ──" -ForegroundColor White
+        Write-Host "  ── [$taskIndex/$($tasks.Count)] $className ($category) ──" -ForegroundColor White
+        Write-Host "  $(Get-Date -Format 'HH:mm:ss') File: $filePath" -ForegroundColor DarkGray
 
         # Phase 3a: Migration Agent
         $promptFile = Join-Path $promptsDir "$className.md"
@@ -369,10 +384,11 @@ RULES:
    - Process.Kill -> remove or use TaskEnvironment
 4. Check ALL methods including private helpers, base classes, lambdas, LINQ, Lazy<T> factories
 5. Do NOT null-check TaskEnvironment - MSBuild always provides it
-6. Do NOT modify test files
+6. Do NOT modify test files or any other task files
 7. Save the migrated file in-place at the same path
 
-After migrating, verify the file compiles: dotnet build $testTasksRepo\src\SdkTasks\SdkTasks.csproj
+After migrating, verify the file compiles: dotnet build $testTasksRepo\src\SdkTasks\SdkTasks.csproj --verbosity quiet
+Do NOT run tests. Do NOT run the full test suite. Only build to verify compilation.
 "@
 
         $migrateLog = Join-Path $iterLogDir "migrate-$className.log"
@@ -384,15 +400,18 @@ After migrating, verify the file compiles: dotnet build $testTasksRepo\src\SdkTa
 You are a migration checker agent. Verify that the task migration was done correctly.
 
 TASK FILE: $fullTaskPath
-TEST PROJECT: $testTasksRepo\tests\SdkTasks.Tests\
+TEST PROJECT: $testTasksRepo\tests\SdkTasks.Tests\SdkTasks.Tests.csproj
 
+IMPORTANT: Only run the test for THIS specific task. Do NOT run the full test suite.
+
+Steps:
 1. Read the migrated task file
 2. Check for any remaining forbidden API calls (Path.GetFullPath, Environment.GetEnvironmentVariable, Environment.CurrentDirectory, Console.*, new ProcessStartInfo, Environment.Exit/FailFast)
 3. Verify the task implements IMultiThreadableTask and has [MSBuildMultiThreadableTask]
-4. Run the specific test for this task:
-   dotnet test $testTasksRepo\tests\SdkTasks.Tests\SdkTasks.Tests.csproj --filter "FullyQualifiedName~$className" --verbosity normal
-5. If tests fail, report what went wrong
-6. If you find remaining forbidden APIs, fix them in-place
+4. Run ONLY the test for this task (do NOT run unfiltered dotnet test):
+   dotnet test $testTasksRepo\tests\SdkTasks.Tests\SdkTasks.Tests.csproj --filter "FullyQualifiedName~$className" --verbosity normal --no-build
+5. If the filtered test fails, read the error and fix the task file. Then rebuild and re-run the filtered test only.
+6. Do NOT modify test files or other task files. Do NOT run tests for other tasks.
 
 Report PASS or FAIL as the last line of your output.
 "@
@@ -408,7 +427,20 @@ Report PASS or FAIL as the last line of your output.
             MigrationExit = $migrateResult.ExitCode
             CheckExit     = $checkResult.ExitCode
         }
+
+        # Per-task summary
+        $migOk = $migrateResult.ExitCode -eq 0
+        $chkOk = $checkResult.ExitCode -eq 0
+        $taskStatus = if ($migOk -and $chkOk) { "✅ PASS" } elseif ($migOk) { "⚠️  CHECK FAILED" } else { "❌ MIGRATE FAILED" }
+        Write-Host "  $(Get-Date -Format 'HH:mm:ss') Result: $taskStatus | Migrate: $('{0:mm\:ss}' -f $migrateResult.Duration) | Check: $('{0:mm\:ss}' -f $checkResult.Duration)" -ForegroundColor $(if ($migOk -and $chkOk) { "Green" } else { "Yellow" })
     }
+
+    # Phase 3 summary
+    $passed = @($taskResults | Where-Object { $_.MigrationExit -eq 0 -and $_.CheckExit -eq 0 }).Count
+    $migFailed = @($taskResults | Where-Object { $_.MigrationExit -ne 0 }).Count
+    $chkFailed = @($taskResults | Where-Object { $_.MigrationExit -eq 0 -and $_.CheckExit -ne 0 }).Count
+    Write-Host ""
+    Write-Host "  Phase 3 Summary: $passed/$($tasks.Count) passed | $migFailed migrate failures | $chkFailed check failures" -ForegroundColor $(if ($passed -eq $tasks.Count) { "Green" } else { "Yellow" })
 
     return $taskResults
 }
@@ -431,14 +463,14 @@ function Invoke-Phase4 {
         return @{ Total = 0; Passed = 0; Failed = 0; FailedTests = @() }
     }
 
-    Write-Host "  Running full test suite..." -ForegroundColor Yellow
+    Write-Host "  $(Get-Date -Format 'HH:mm:ss') Running full test suite..." -ForegroundColor Yellow
     $trxFileName = "test-results.trx"
     & dotnet test $testsProject --logger "trx;LogFileName=$trxFileName" --results-directory $iterLogDir --verbosity quiet 2>&1 | Out-Null
     $trxPath = Join-Path $iterLogDir $trxFileName
 
     $results = Parse-TestResults -TrxPath $trxPath
     $color = if ($results.Failed -eq 0) { "Green" } else { "Red" }
-    Write-Host "  Results: $($results.Passed)/$($results.Total) passed, $($results.Failed) failed" -ForegroundColor $color
+    Write-Host "  $(Get-Date -Format 'HH:mm:ss') Results: $($results.Passed)/$($results.Total) passed, $($results.Failed) failed" -ForegroundColor $color
 
     if ($results.FailedTests.Count -gt 0) {
         Write-Host "  Failed tests:" -ForegroundColor Red
