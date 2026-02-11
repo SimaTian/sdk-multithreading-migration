@@ -5,6 +5,8 @@ namespace Microsoft.Build.Framework
 {
     public class TaskEnvironment
     {
+        private readonly Dictionary<string, string?> _environmentVariables = new(System.StringComparer.OrdinalIgnoreCase);
+
         public string ProjectDirectory { get; set; } = string.Empty;
 
         public string GetAbsolutePath(string path)
@@ -22,12 +24,15 @@ namespace Microsoft.Build.Framework
         public string? GetEnvironmentVariable(string name)
         {
             // In real MSBuild, this returns the task-scoped env var
+            if (_environmentVariables.TryGetValue(name, out var value))
+                return value;
             return System.Environment.GetEnvironmentVariable(name);
         }
 
         public void SetEnvironmentVariable(string name, string? value)
         {
             // In real MSBuild, this sets the task-scoped env var
+            _environmentVariables[name] = value;
         }
 
         public ProcessStartInfo GetProcessStartInfo()

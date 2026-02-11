@@ -1,6 +1,4 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
-
+// FIXED: Uses per-instance watcher with TaskEnvironment.GetAbsolutePath() for path resolution.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -9,22 +7,17 @@ using System.Threading;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
 
-namespace UnsafeThreadSafeTasks.IntermittentViolations
+namespace FixedThreadSafeTasks.IntermittentViolations
 {
-    /// <summary>
-    /// Monitors a directory for file changes using a static FileSystemWatcher that is shared
-    /// across all task instances. The watcher path is resolved with Path.GetFullPath on first
-    /// creation, locking it to the first invoking project's CWD. All subsequent invocations
-    /// reuse the same watcher and therefore observe changes from the wrong directory.
-    /// </summary>
     [MSBuildMultiThreadableTask]
     public class FileWatcherGlobalNotifications : Microsoft.Build.Utilities.Task, IMultiThreadableTask
     {
         public TaskEnvironment TaskEnvironment { get; set; } = new();
 
-        private static FileSystemWatcher? _watcher;
-        private static readonly object _watcherLock = new();
-        private static readonly List<string> _changedFiles = new();
+        // FIX: Per-instance watcher and changed files list instead of static
+        private FileSystemWatcher? _watcher;
+        private readonly object _watcherLock = new();
+        private readonly List<string> _changedFiles = new();
 
         private const int DefaultCollectionTimeoutMs = 2000;
 
@@ -54,18 +47,11 @@ namespace UnsafeThreadSafeTasks.IntermittentViolations
             Log.LogMessage(MessageImportance.Normal,
                 "Collected {0} changed file(s) matching '{1}'.", collected.Length, FileFilter);
 
+            DisposeWatcher();
+
             return true;
         }
 
-        /// <summary>
-        /// Creates or reuses a static FileSystemWatcher. The lock-and-null-check pattern looks
-        /// properly thread-safe, but the bug is semantic: the first invocation resolves
-        /// WatchDirectory with Path.GetFullPath (relative to global CWD) and all subsequent
-        /// invocations silently reuse that watcher — even if they intended a different directory.
-        /// VIOLATION: Uses Path.GetFullPath instead of TaskEnvironment.GetAbsolutePath, and
-        /// shares a single static watcher across all projects.
-        /// Fix: Use per-instance watchers with TaskEnvironment.GetAbsolutePath(WatchDirectory).
-        /// </summary>
         private void InitializeWatcher()
         {
             lock (_watcherLock)
@@ -77,7 +63,8 @@ namespace UnsafeThreadSafeTasks.IntermittentViolations
                     return;
                 }
 
-                string resolvedDir = Path.GetFullPath(WatchDirectory);
+                // FIX: Use TaskEnvironment.GetAbsolutePath instead of Path.GetFullPath
+                string resolvedDir = TaskEnvironment.GetAbsolutePath(WatchDirectory);
                 if (!Directory.Exists(resolvedDir))
                 {
                     Log.LogWarning("Watch directory '{0}' does not exist. Creating it.", resolvedDir);
@@ -102,7 +89,7 @@ namespace UnsafeThreadSafeTasks.IntermittentViolations
             }
         }
 
-        private static void OnFileChanged(object sender, FileSystemEventArgs e)
+        private void OnFileChanged(object sender, FileSystemEventArgs e)
         {
             lock (_watcherLock)
             {
@@ -113,10 +100,6 @@ namespace UnsafeThreadSafeTasks.IntermittentViolations
             }
         }
 
-        /// <summary>
-        /// Waits for file-change events up to the specified timeout, then returns
-        /// the accumulated changed files as ITaskItem[].
-        /// </summary>
         private ITaskItem[] CollectChangedFiles(int timeoutMs)
         {
             Thread.Sleep(timeoutMs);
@@ -141,11 +124,7 @@ namespace UnsafeThreadSafeTasks.IntermittentViolations
             return items.ToArray();
         }
 
-        /// <summary>
-        /// Disposes the static watcher. In production code this would be called at build
-        /// completion, but because the watcher is static, there is no safe per-project teardown.
-        /// </summary>
-        public static void DisposeWatcher()
+        internal void DisposeWatcher()
         {
             lock (_watcherLock)
             {
