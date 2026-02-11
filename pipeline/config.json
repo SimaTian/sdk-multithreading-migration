@@ -10,7 +10,7 @@
     "localPath": "sdk-migration-test-tasks"
   },
   "agent": {
-    "model": "claude-sonnet-4",
+    "model": "claude-opus-4.6",
     "flags": "--yolo --no-ask-user --silent"
   },
   "paths": {
