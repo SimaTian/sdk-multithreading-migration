@@ -1,0 +1,25 @@
+{
+  "migrationRepo": {
+    "owner": "SimaTian",
+    "name": "sdk-multithreading-migration",
+    "localPath": "sdk-multithreading-migration"
+  },
+  "testTasksRepo": {
+    "owner": "SimaTian",
+    "name": "sdk-migration-test-tasks",
+    "localPath": "sdk-migration-test-tasks"
+  },
+  "agent": {
+    "model": "claude-sonnet-4",
+    "flags": "--yolo --no-ask-user --silent"
+  },
+  "paths": {
+    "tasksDir": "src/SdkTasks",
+    "skillsDir": "skills",
+    "testsDir": "tests/SdkTasks.Tests",
+    "promptsDir": "pipeline/prompts",
+    "logsDir": "pipeline/logs",
+    "reportsDir": "pipeline/reports",
+    "mappingFile": "pipeline-test-mapping.json"
+  }
+}
