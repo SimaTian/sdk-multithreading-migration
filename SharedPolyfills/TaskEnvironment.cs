@@ -9,19 +9,19 @@ namespace Microsoft.Build.Framework
 
         public string ProjectDirectory { get; set; } = string.Empty;
 
-        public string GetAbsolutePath(string path)
+        public virtual string GetAbsolutePath(string path)
         {
             if (System.IO.Path.IsPathRooted(path))
                 return path;
             return System.IO.Path.Combine(ProjectDirectory, path);
         }
 
-        public string GetCanonicalForm(string path)
+        public virtual string GetCanonicalForm(string path)
         {
             return System.IO.Path.GetFullPath(GetAbsolutePath(path));
         }
 
-        public string? GetEnvironmentVariable(string name)
+        public virtual string? GetEnvironmentVariable(string name)
         {
             // In real MSBuild, this returns the task-scoped env var
             if (_environmentVariables.TryGetValue(name, out var value))

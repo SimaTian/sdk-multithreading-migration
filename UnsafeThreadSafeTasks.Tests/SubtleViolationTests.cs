@@ -25,9 +25,8 @@ namespace UnsafeThreadSafeTasks.Tests
         #region IndirectPathGetFullPath
 
         [Fact]
-        public void IndirectPathGetFullPath_Broken_ResolvesToCwd()
+        public void IndirectPathGetFullPath_Broken_ShouldResolveToProjectDir()
         {
-            // Arrange
             var fileName = "indirect-test.txt";
             File.WriteAllText(Path.Combine(_projectDir, fileName), "hello");
 
@@ -39,20 +38,16 @@ namespace UnsafeThreadSafeTasks.Tests
                 TaskEnvironment = taskEnv
             };
 
-            // Act
             bool result = task.Execute();
 
-            // Assert: broken task resolves via helper that uses Path.GetFullPath (CWD)
+            // Assert CORRECT behavior: resolved path should be relative to projectDir
             Assert.True(result);
-            var cwdResolved = Path.GetFullPath(fileName);
-            Assert.Equal(cwdResolved, task.ResolvedPath);
-            Assert.NotEqual(Path.Combine(_projectDir, fileName), task.ResolvedPath);
+            Assert.Equal(Path.Combine(_projectDir, fileName), task.ResolvedPath);
         }
 
         [Fact]
-        public void IndirectPathGetFullPath_Fixed_ResolvesToProjectDir()
+        public void IndirectPathGetFullPath_Fixed_ShouldResolveToProjectDir()
         {
-            // Arrange
             var fileName = "indirect-test.txt";
             File.WriteAllText(Path.Combine(_projectDir, fileName), "hello");
 
@@ -64,10 +59,9 @@ namespace UnsafeThreadSafeTasks.Tests
                 TaskEnvironment = taskEnv
             };
 
-            // Act
             bool result = task.Execute();
 
-            // Assert: fixed task resolves via TaskEnvironment
+            // Assert CORRECT behavior: resolved path should be relative to projectDir
             Assert.True(result);
             Assert.Equal(Path.Combine(_projectDir, fileName), task.ResolvedPath);
         }
@@ -77,9 +71,8 @@ namespace UnsafeThreadSafeTasks.Tests
         #region LambdaCapturesCurrentDirectory
 
         [Fact]
-        public void LambdaCapturesCurrentDirectory_Broken_ResolvesToCwd()
+        public void LambdaCapturesCurrentDirectory_Broken_ShouldResolveToProjectDir()
         {
-            // Arrange
             var relativePaths = new[] { "file1.txt", "subdir\\file2.txt" };
 
             var taskEnv = TaskEnvironmentHelper.CreateForTest(_projectDir);
@@ -90,20 +83,17 @@ namespace UnsafeThreadSafeTasks.Tests
                 TaskEnvironment = taskEnv
             };
 
-            // Act
             bool result = task.Execute();
 
-            // Assert: broken task uses Environment.CurrentDirectory in lambda
+            // Assert CORRECT behavior: paths should resolve relative to projectDir
             Assert.True(result);
-            var cwd = Environment.CurrentDirectory;
-            Assert.Equal(Path.Combine(cwd, "file1.txt"), task.AbsolutePaths[0]);
-            Assert.NotEqual(Path.Combine(_projectDir, "file1.txt"), task.AbsolutePaths[0]);
+            Assert.Equal(Path.Combine(_projectDir, "file1.txt"), task.AbsolutePaths[0]);
+            Assert.Equal(Path.Combine(_projectDir, "subdir\\file2.txt"), task.AbsolutePaths[1]);
         }
 
         [Fact]
-        public void LambdaCapturesCurrentDirectory_Fixed_ResolvesToProjectDir()
+        public void LambdaCapturesCurrentDirectory_Fixed_ShouldResolveToProjectDir()
         {
-            // Arrange
             var relativePaths = new[] { "file1.txt", "subdir\\file2.txt" };
 
             var taskEnv = TaskEnvironmentHelper.CreateForTest(_projectDir);
@@ -114,10 +104,9 @@ namespace UnsafeThreadSafeTasks.Tests
                 TaskEnvironment = taskEnv
             };
 
-            // Act
             bool result = task.Execute();
 
-            // Assert: fixed task uses TaskEnvironment.ProjectDirectory
+            // Assert CORRECT behavior: paths should resolve relative to projectDir
             Assert.True(result);
             Assert.Equal(Path.Combine(_projectDir, "file1.txt"), task.AbsolutePaths[0]);
             Assert.Equal(Path.Combine(_projectDir, "subdir\\file2.txt"), task.AbsolutePaths[1]);
@@ -128,9 +117,8 @@ namespace UnsafeThreadSafeTasks.Tests
         #region SharedMutableStaticField
 
         [Fact]
-        public void SharedMutableStaticField_Broken_SharedStateAcrossInstances()
+        public void SharedMutableStaticField_Broken_ShouldHaveInstanceIsolation()
         {
-            // Arrange
             var taskEnv = TaskEnvironmentHelper.CreateForTest(_projectDir);
 
             var task1 = new BrokenSubtle.SharedMutableStaticField
@@ -147,19 +135,17 @@ namespace UnsafeThreadSafeTasks.Tests
                 TaskEnvironment = taskEnv
             };
 
-            // Act
             task1.Execute();
             task2.Execute();
 
-            // Assert: broken task uses static fields, so execution counts are shared
-            // task2 sees the incremented count from task1
-            Assert.True(task2.ExecutionNumber > 1);
+            // Assert CORRECT behavior: each instance should have its own execution count
+            Assert.Equal(1, task1.ExecutionNumber);
+            Assert.Equal(1, task2.ExecutionNumber);
         }
 
         [Fact]
-        public void SharedMutableStaticField_Fixed_InstanceIsolation()
+        public void SharedMutableStaticField_Fixed_ShouldHaveInstanceIsolation()
         {
-            // Arrange
             var taskEnv = TaskEnvironmentHelper.CreateForTest(_projectDir);
 
             var task1 = new FixedSubtle.SharedMutableStaticField
@@ -176,11 +162,10 @@ namespace UnsafeThreadSafeTasks.Tests
                 TaskEnvironment = taskEnv
             };
 
-            // Act
             task1.Execute();
             task2.Execute();
 
-            // Assert: fixed task uses instance fields, each instance has its own count
+            // Assert CORRECT behavior: each instance should have its own execution count
             Assert.Equal(1, task1.ExecutionNumber);
             Assert.Equal(1, task2.ExecutionNumber);
         }
@@ -190,9 +175,8 @@ namespace UnsafeThreadSafeTasks.Tests
         #region PartialMigration
 
         [Fact]
-        public void PartialMigration_Broken_SecondaryResolvesToCwd()
+        public void PartialMigration_Broken_ShouldResolveBothToProjectDir()
         {
-            // Arrange
             var primaryFile = "primary.txt";
             var secondaryFile = "secondary.txt";
             File.WriteAllText(Path.Combine(_projectDir, primaryFile), "same");
@@ -207,23 +191,16 @@ namespace UnsafeThreadSafeTasks.Tests
                 TaskEnvironment = taskEnv
             };
 
-            // Act
             bool result = task.Execute();
 
-            // Assert: primary resolves to ProjectDir, but secondary uses Path.GetFullPath (CWD)
+            // Assert CORRECT behavior: both paths resolve to ProjectDir, files found and match
             Assert.True(result);
-            var expectedPrimary = Path.Combine(_projectDir, primaryFile);
-            var cwdSecondary = Path.GetFullPath(secondaryFile);
-            // The secondary resolves to CWD, not ProjectDir
-            Assert.NotEqual(Path.Combine(_projectDir, secondaryFile), cwdSecondary);
-            // Files won't match because secondary can't be found at CWD
-            Assert.False(task.FilesMatch);
+            Assert.True(task.FilesMatch);
         }
 
         [Fact]
-        public void PartialMigration_Fixed_BothResolveToProjectDir()
+        public void PartialMigration_Fixed_ShouldResolveBothToProjectDir()
         {
-            // Arrange
             var primaryFile = "primary.txt";
             var secondaryFile = "secondary.txt";
             File.WriteAllText(Path.Combine(_projectDir, primaryFile), "same");
@@ -238,10 +215,9 @@ namespace UnsafeThreadSafeTasks.Tests
                 TaskEnvironment = taskEnv
             };
 
-            // Act
             bool result = task.Execute();
 
-            // Assert: both paths resolve to ProjectDir, files found and match
+            // Assert CORRECT behavior: both paths resolve to ProjectDir, files found and match
             Assert.True(result);
             Assert.True(task.FilesMatch);
         }
@@ -251,13 +227,12 @@ namespace UnsafeThreadSafeTasks.Tests
         #region DoubleResolvesPath
 
         [Fact]
-        public void DoubleResolvesPath_Broken_ReResolvesWithPathGetFullPath()
+        public void DoubleResolvesPath_Broken_ShouldUseTaskEnvironmentOnly()
         {
-            // Arrange
             var fileName = "double-test.txt";
             File.WriteAllText(Path.Combine(_projectDir, fileName), "data");
 
-            var taskEnv = TaskEnvironmentHelper.CreateForTest(_projectDir);
+            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = _projectDir };
             var task = new BrokenSubtle.DoubleResolvesPath
             {
                 BuildEngine = _engine,
@@ -265,27 +240,22 @@ namespace UnsafeThreadSafeTasks.Tests
                 TaskEnvironment = taskEnv
             };
 
-            // Act
             bool result = task.Execute();
 
-            // Assert: the first resolve is correct via TaskEnvironment, but the second
-            // re-resolves with Path.GetFullPath. For an already-absolute path this may
-            // work, but it still uses a forbidden API. We verify the task ran.
+            // The broken task uses Path.GetFullPath() instead of TaskEnvironment.GetCanonicalForm()
+            // so GetCanonicalForm should NOT have been called
             Assert.True(result);
-            // The canonical path should equal Path.GetFullPath of the TaskEnvironment-resolved path
-            var expectedResolved = Path.Combine(_projectDir, fileName);
-            var doubleResolved = Path.GetFullPath(expectedResolved);
-            Assert.Equal(doubleResolved, task.CanonicalPath);
+            Assert.True(taskEnv.GetCanonicalFormCallCount > 0,
+                "Broken task should use TaskEnvironment.GetCanonicalForm() instead of Path.GetFullPath()");
         }
 
         [Fact]
-        public void DoubleResolvesPath_Fixed_UsesTaskEnvironmentOnly()
+        public void DoubleResolvesPath_Fixed_ShouldUseTaskEnvironmentOnly()
         {
-            // Arrange
             var fileName = "double-test.txt";
             File.WriteAllText(Path.Combine(_projectDir, fileName), "data");
 
-            var taskEnv = TaskEnvironmentHelper.CreateForTest(_projectDir);
+            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = _projectDir };
             var task = new FixedSubtle.DoubleResolvesPath
             {
                 BuildEngine = _engine,
@@ -293,13 +263,12 @@ namespace UnsafeThreadSafeTasks.Tests
                 TaskEnvironment = taskEnv
             };
 
-            // Act
             bool result = task.Execute();
 
-            // Assert: fixed task uses TaskEnvironment.GetCanonicalForm, no Path.GetFullPath
+            // Assert CORRECT behavior: fixed task uses TaskEnvironment.GetCanonicalForm()
             Assert.True(result);
-            var expectedCanonical = taskEnv.GetCanonicalForm(fileName);
-            Assert.Equal(expectedCanonical, task.CanonicalPath);
+            Assert.True(taskEnv.GetCanonicalFormCallCount > 0,
+                "Fixed task should use TaskEnvironment.GetCanonicalForm() instead of Path.GetFullPath()");
         }
 
         #endregion

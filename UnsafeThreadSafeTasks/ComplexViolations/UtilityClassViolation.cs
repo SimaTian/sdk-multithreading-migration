@@ -67,23 +67,23 @@ namespace UnsafeThreadSafeTasks.ComplexViolations
     [MSBuildMultiThreadableTask]
     public class OutputDirectoryResolver : MSBuildTask, IMultiThreadableTask
     {
-        public TaskEnvironment TaskEnvironment { get; set; }
+        public TaskEnvironment TaskEnvironment { get; set; } = null!;
 
         [Required]
-        public string OutputDirectory { get; set; }
+        public string OutputDirectory { get; set; } = string.Empty;
 
-        public string IntermediateDirectory { get; set; }
+        public string IntermediateDirectory { get; set; } = string.Empty;
 
-        public ITaskItem[] ProjectReferences { get; set; }
-
-        [Output]
-        public string ResolvedOutputDirectory { get; set; }
+        public ITaskItem[] ProjectReferences { get; set; } = Array.Empty<ITaskItem>();
 
         [Output]
-        public string ResolvedIntermediateDirectory { get; set; }
+        public string? ResolvedOutputDirectory { get; set; }
 
         [Output]
-        public ITaskItem[] ResolvedProjectReferences { get; set; }
+        public string? ResolvedIntermediateDirectory { get; set; }
+
+        [Output]
+        public ITaskItem[] ResolvedProjectReferences { get; set; } = Array.Empty<ITaskItem>();
 
         public override bool Execute()
         {
@@ -136,7 +136,7 @@ namespace UnsafeThreadSafeTasks.ComplexViolations
             return results.ToArray();
         }
 
-        private ITaskItem ResolveReference(ITaskItem reference, string projectDir)
+        private ITaskItem? ResolveReference(ITaskItem reference, string projectDir)
         {
             string refPath = reference.ItemSpec;
             if (!PathUtilities.IsValidPath(refPath))

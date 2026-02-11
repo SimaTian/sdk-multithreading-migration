@@ -8,13 +8,13 @@ namespace UnsafeThreadSafeTasks.EnvironmentViolations
     [MSBuildMultiThreadableTask]
     public class SetsEnvironmentCurrentDirectory : MSBuildTask, IMultiThreadableTask
     {
-        public TaskEnvironment TaskEnvironment { get; set; }
+        public TaskEnvironment TaskEnvironment { get; set; } = null!;
 
         public string? NewDirectory { get; set; }
 
         public override bool Execute()
         {
-            Environment.CurrentDirectory = NewDirectory;
+            Environment.CurrentDirectory = NewDirectory!;
             Log.LogMessage(MessageImportance.Normal, "Changed working directory to: {0}", NewDirectory);
             return true;
         }

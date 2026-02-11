@@ -168,10 +168,10 @@ namespace FixedThreadSafeTasks.ComplexViolations
 
                     foreach (string transitiveRef in childProjectRefs)
                     {
-                        // FIX: uses Path.Combine only (parentDir is already absolute) instead of Path.GetFullPath()
+                        // FIX: uses TaskEnvironment.GetCanonicalForm for transitive ref resolution
                         string parentDir = System.IO.Path.GetDirectoryName(parentRef) ?? string.Empty;
                         string combined = System.IO.Path.Combine(parentDir, transitiveRef);
-                        string resolvedTransitive = System.IO.Path.GetFullPath(combined);
+                        string resolvedTransitive = TaskEnvironment.GetCanonicalForm(combined);
 
                         if (!visited.Contains(resolvedTransitive))
                         {

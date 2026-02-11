@@ -39,7 +39,7 @@ namespace UnsafeThreadSafeTasks.Tests
         // =====================================================================
 
         [Fact]
-        public void UsesEnvironmentGetVariable_BrokenTask_ResolvesRelativeToCwd()
+        public void UsesEnvironmentGetVariable_BrokenTask_ShouldReadFromTaskEnvironment()
         {
             var varName = SetGlobalEnvVar("GLOBAL_VALUE");
             var taskEnv = TaskEnvironmentHelper.CreateForTest();
@@ -54,12 +54,12 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Broken task uses Environment.GetEnvironmentVariable directly — gets GLOBAL_VALUE
-            Assert.Equal("GLOBAL_VALUE", task.VariableValue);
+            // Assert CORRECT behavior: task should read from TaskEnvironment, not global env
+            Assert.Equal("TASK_VALUE", task.VariableValue);
         }
 
         [Fact]
-        public void UsesEnvironmentGetVariable_FixedTask_ResolvesRelativeToProjectDirectory()
+        public void UsesEnvironmentGetVariable_FixedTask_ShouldReadFromTaskEnvironment()
         {
             var varName = SetGlobalEnvVar("GLOBAL_VALUE");
             var taskEnv = TaskEnvironmentHelper.CreateForTest();
@@ -74,7 +74,7 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Fixed task uses TaskEnvironment.GetEnvironmentVariable — gets TASK_VALUE
+            // Assert CORRECT behavior: task should read from TaskEnvironment, not global env
             Assert.Equal("TASK_VALUE", task.VariableValue);
         }
 
@@ -83,7 +83,7 @@ namespace UnsafeThreadSafeTasks.Tests
         // =====================================================================
 
         [Fact]
-        public void UsesEnvironmentSetVariable_BrokenTask_ResolvesRelativeToCwd()
+        public void UsesEnvironmentSetVariable_BrokenTask_ShouldNotModifyGlobalState()
         {
             var varName = "MSBUILD_SET_TEST_" + Guid.NewGuid().ToString("N")[..8];
             _envVarsToClean.Add(varName);
@@ -100,12 +100,14 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Broken task uses Environment.SetEnvironmentVariable — modifies global process state
-            Assert.Equal("BROKEN_SET", Environment.GetEnvironmentVariable(varName));
+            // Assert CORRECT behavior: global env should NOT be modified
+            Assert.Null(Environment.GetEnvironmentVariable(varName));
+            // The value should be stored in TaskEnvironment
+            Assert.Equal("BROKEN_SET", taskEnv.GetEnvironmentVariable(varName));
         }
 
         [Fact]
-        public void UsesEnvironmentSetVariable_FixedTask_ResolvesRelativeToProjectDirectory()
+        public void UsesEnvironmentSetVariable_FixedTask_ShouldNotModifyGlobalState()
         {
             var varName = "MSBUILD_SET_TEST_" + Guid.NewGuid().ToString("N")[..8];
             _envVarsToClean.Add(varName);
@@ -122,9 +124,9 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Fixed task uses TaskEnvironment.SetEnvironmentVariable — does NOT modify global state
+            // Assert CORRECT behavior: global env should NOT be modified
             Assert.Null(Environment.GetEnvironmentVariable(varName));
-            // But the value is stored in the TaskEnvironment
+            // The value should be stored in TaskEnvironment
             Assert.Equal("FIXED_SET", taskEnv.GetEnvironmentVariable(varName));
         }
 
@@ -133,7 +135,7 @@ namespace UnsafeThreadSafeTasks.Tests
         // =====================================================================
 
         [Fact]
-        public void ReadsEnvironmentCurrentDirectory_BrokenTask_ResolvesRelativeToCwd()
+        public void ReadsEnvironmentCurrentDirectory_BrokenTask_ShouldReadProjectDirectory()
         {
             var projectDir = CreateTempDir();
 
@@ -145,13 +147,12 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Broken task reads Environment.CurrentDirectory — returns process CWD, not projectDir
-            Assert.Equal(Environment.CurrentDirectory, task.CurrentDir);
-            Assert.NotEqual(projectDir, task.CurrentDir);
+            // Assert CORRECT behavior: task should return ProjectDirectory, not process CWD
+            Assert.Equal(projectDir, task.CurrentDir);
         }
 
         [Fact]
-        public void ReadsEnvironmentCurrentDirectory_FixedTask_ResolvesRelativeToProjectDirectory()
+        public void ReadsEnvironmentCurrentDirectory_FixedTask_ShouldReadProjectDirectory()
         {
             var projectDir = CreateTempDir();
 
@@ -163,7 +164,7 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Fixed task reads TaskEnvironment.ProjectDirectory — returns projectDir
+            // Assert CORRECT behavior: task should return ProjectDirectory, not process CWD
             Assert.Equal(projectDir, task.CurrentDir);
         }
 
@@ -172,7 +173,7 @@ namespace UnsafeThreadSafeTasks.Tests
         // =====================================================================
 
         [Fact]
-        public void SetsEnvironmentCurrentDirectory_BrokenTask_ResolvesRelativeToCwd()
+        public void SetsEnvironmentCurrentDirectory_BrokenTask_ShouldNotModifyGlobalCwd()
         {
             var projectDir = CreateTempDir();
             var originalCwd = Environment.CurrentDirectory;
@@ -186,15 +187,15 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Broken task sets Environment.CurrentDirectory — modifies global process state
-            Assert.Equal(projectDir, Environment.CurrentDirectory);
+            // Assert CORRECT behavior: Environment.CurrentDirectory should be unchanged
+            Assert.Equal(originalCwd, Environment.CurrentDirectory);
 
-            // Restore CWD
+            // Restore CWD in case broken task changed it
             Environment.CurrentDirectory = originalCwd;
         }
 
         [Fact]
-        public void SetsEnvironmentCurrentDirectory_FixedTask_ResolvesRelativeToProjectDirectory()
+        public void SetsEnvironmentCurrentDirectory_FixedTask_ShouldNotModifyGlobalCwd()
         {
             var projectDir = CreateTempDir();
             var originalCwd = Environment.CurrentDirectory;
@@ -208,7 +209,7 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Fixed task does NOT modify Environment.CurrentDirectory
+            // Assert CORRECT behavior: Environment.CurrentDirectory should be unchanged
             Assert.Equal(originalCwd, Environment.CurrentDirectory);
         }
     }

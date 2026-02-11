@@ -11,19 +11,19 @@ namespace FixedThreadSafeTasks.ComplexViolations
     [MSBuildMultiThreadableTask]
     public class LazyInitializationViolation : Microsoft.Build.Utilities.Task, IMultiThreadableTask
     {
-        public TaskEnvironment TaskEnvironment { get; set; }
+        public TaskEnvironment TaskEnvironment { get; set; } = null!;
 
         [Required]
-        public string ConfigurationFile { get; set; }
+        public string ConfigurationFile { get; set; } = string.Empty;
 
-        public string TargetFramework { get; set; }
+        public string TargetFramework { get; set; } = string.Empty;
 
         [Output]
-        public ITaskItem[] ResolvedDependencies { get; set; }
+        public ITaskItem[] ResolvedDependencies { get; set; } = Array.Empty<ITaskItem>();
 
         // FIX: Lazy factories moved out of constructor; initialized in Execute() with TaskEnvironment
-        private Dictionary<string, string> _configCache;
-        private string _sdkRoot;
+        private Dictionary<string, string> _configCache = null!;
+        private string _sdkRoot = null!;
 
         public override bool Execute()
         {
@@ -46,7 +46,7 @@ namespace FixedThreadSafeTasks.ComplexViolations
 
             foreach (KeyValuePair<string, string> entry in config)
             {
-                string resolvedPath = ResolveDependency(entry.Key, entry.Value, sdkRoot, framework);
+                string? resolvedPath = ResolveDependency(entry.Key, entry.Value, sdkRoot, framework);
                 if (!string.IsNullOrEmpty(resolvedPath))
                 {
                     results.Add(BuildOutputItem(entry.Key, resolvedPath));
@@ -103,7 +103,7 @@ namespace FixedThreadSafeTasks.ComplexViolations
             return result;
         }
 
-        private string ResolveDependency(string name, string version, string sdkRoot, string framework)
+        private string? ResolveDependency(string name, string version, string sdkRoot, string framework)
         {
             string probePath = TaskEnvironment.GetAbsolutePath(Path.Combine("packages", name, version, "lib", framework));
             if (Directory.Exists(probePath))
