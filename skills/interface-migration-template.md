@@ -95,15 +95,21 @@ dotnet test src/Tasks/Microsoft.NET.Build.Tasks.UnitTests/Microsoft.NET.Build.Ta
 ```
 **All existing tests MUST still pass.**
 
-## Test Design Principle: Tests Must Break on Unmigrated Code
+## Test Design Principle: Behavioral Correctness Over Interface Checks
 
-Design tests so that they FAIL if the migration hasn't been done:
+DO NOT write tests that merely check for attribute/interface presence. These add no value.
+
+Instead, design tests that verify **output correctness**:
 - The task receives relative paths as input
 - `TaskEnvironment.ProjectDirectory` is set to a temp directory **different from** `Environment.CurrentDirectory`
 - Required files/directories are created **only** under `ProjectDirectory`, NOT under CWD
+- Run the task and verify Output properties contain paths under ProjectDirectory
+- Verify log messages reference ProjectDirectory paths, not CWD paths
 - If the task uses `Path.GetFullPath()` instead of `TaskEnvironment.GetAbsolutePath()`, it resolves against CWD and fails to find files
-- If the task doesn't implement `IMultiThreadableTask`, the interface check fails
-- If the task doesn't have the attribute, the attribute check fails
+
+**Reflection-based generalized testing**: Use reflection to enumerate Input/Output properties. For tasks with `string` Output properties, assert they start with the ProjectDirectory path. For `ITaskItem[]` outputs, assert ItemSpec values are rooted under ProjectDirectory. This eliminates repetitive per-task test code.
+
+**Preserve public API surface**: The migrated task MUST have the exact same set of public properties as the original. Use reflection to compare before/after and fail if any property was removed, renamed, or retyped.
 
 ## Polyfills Available (from Phase 0)
 

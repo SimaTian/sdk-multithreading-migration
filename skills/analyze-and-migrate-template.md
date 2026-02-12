@@ -8,6 +8,26 @@ Use this template when migrating a task that MAY or MAY NOT use forbidden APIs. 
 **Every migration follows this strict order:**
 1. Analyze the task → 2. Write failing tests → 3. Verify tests FAIL → 4. Migrate the code → 5. Verify tests PASS → 6. Verify no regressions
 
+## Test Design Rules
+
+1. **Do NOT generate tests for attribute or interface implementation** (`[MSBuildMultiThreadableTask]`, `IMultiThreadableTask`). These are trivially verified and don't tell us anything about correctness. Focus all test effort on behavioral correctness.
+
+2. **Test output correctness against multi-process baseline**: The IMultiThreadableTask migration should produce identical outputs to the original single-threaded execution. Test by:
+   - Running the task in single-threaded mode (no TaskEnvironment, CWD-based) as baseline
+   - Running the task in multi-threaded mode (with TaskEnvironment) 
+   - Asserting both produce identical Output properties and log messages
+
+3. **Use reflection-based test harness where possible**: To avoid duplicating test boilerplate across 46+ tasks, create a generalized test helper that:
+   - Discovers all public Input/Output properties via reflection
+   - Sets Input properties with test values
+   - Verifies Output properties contain project-relative paths (not CWD-relative)
+   - Checks log messages don't contain CWD-based paths
+   - Only write task-specific tests when the task has unique behavior that generic tests can't cover
+
+4. **Local stress testing (not committed)**: Run concurrent execution tests locally during migration to verify thread safety, but do NOT include stress tests in the final committed test suite. These are exploratory validation only.
+
+5. **Preserve all public properties**: Every public property on the original task (Input, Output, or plain) must exist on the migrated task. Dropping, renaming, or changing the type of any public property is a migration error.
+
 ## Process
 
 ### Step 1: Clone & Read

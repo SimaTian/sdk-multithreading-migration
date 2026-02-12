@@ -4,6 +4,14 @@
 
 After migrating a task to `IMultiThreadableTask`, run stress tests to verify the migration is correct under concurrent execution. These tests are exploratory — not committed to the SDK repo — but are essential for validating that path resolution, instance state, and shared resources are thread-safe.
 
+## Important: Stress Tests Are NOT Committed
+
+Stress tests are run locally during the migration process to validate thread safety. They are exploratory and must NOT be included in the final committed test suite. After confirming the migration is correct:
+1. Run stress tests locally
+2. Verify they pass
+3. Delete the stress test files before committing
+4. The committed tests should only include behavioral correctness tests
+
 ## Key Findings from ResolvePackageDependencies Migration
 
 ### 1. TaskEnvironment is always provided — do NOT null-check

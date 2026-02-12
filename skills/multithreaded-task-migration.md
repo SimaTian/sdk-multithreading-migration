@@ -224,6 +224,57 @@ public class GivenAMyTaskMultiThreading
 }
 ```
 
+## Generalized Reflection-Based Test Harness
+
+Instead of writing individual test methods for each task, use a reflection-based harness:
+
+```csharp
+public static class MigrationTestHarness
+{
+    /// <summary>
+    /// Validates that a migrated task resolves all output paths relative to ProjectDirectory.
+    /// Works for any IMultiThreadableTask without task-specific test code.
+    /// </summary>
+    public static void ValidateOutputPathResolution(ITask task, string projectDir)
+    {
+        var taskType = task.GetType();
+        
+        // Verify all Output string properties contain projectDir
+        foreach (var prop in taskType.GetProperties()
+            .Where(p => p.GetCustomAttribute<OutputAttribute>() != null && p.PropertyType == typeof(string)))
+        {
+            var value = prop.GetValue(task) as string;
+            if (!string.IsNullOrEmpty(value))
+                Assert.StartsWith(projectDir, value,
+                    $"Output property {prop.Name} should resolve to ProjectDirectory");
+        }
+        
+        // Verify all Output ITaskItem[] properties have items rooted under projectDir
+        foreach (var prop in taskType.GetProperties()
+            .Where(p => p.GetCustomAttribute<OutputAttribute>() != null && p.PropertyType == typeof(ITaskItem[])))
+        {
+            var items = prop.GetValue(task) as ITaskItem[];
+            if (items != null)
+                foreach (var item in items)
+                    Assert.StartsWith(projectDir, item.ItemSpec,
+                        $"Output item in {prop.Name} should resolve to ProjectDirectory");
+        }
+    }
+    
+    /// <summary>
+    /// Validates the migrated task preserves the exact public API surface of the original.
+    /// </summary>
+    public static void ValidatePublicApiPreserved(Type migratedType, string[] expectedProperties)
+    {
+        var actual = migratedType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(p => p.Name).OrderBy(n => n).ToArray();
+        Assert.Equal(expectedProperties.OrderBy(n => n).ToArray(), actual);
+    }
+}
+```
+
+Use this harness in pipeline-generated tests instead of per-task attribute/interface checks.
+
 ## Polyfills Created (Phase 0)
 
 After the polyfill-setup task completes, the following will be available:
