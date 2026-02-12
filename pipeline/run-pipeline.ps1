@@ -125,6 +125,111 @@ function Get-IterationLogDir {
     return Join-Path $logsDir "iteration-$Iter"
 }
 
+# ─── Parallel Agent Execution ────────────────────────────────────────────────
+
+function Invoke-CopilotAgentAsync {
+    param(
+        [string]$Prompt,
+        [string]$WorkingDir,
+        [string]$LogFile,
+        [string]$Label,
+        [string[]]$ExtraDirs = @()
+    )
+
+    $iterLogDir = Split-Path $LogFile -Parent
+    if (-not (Test-Path $iterLogDir)) {
+        New-Item -ItemType Directory -Path $iterLogDir -Force | Out-Null
+    }
+
+    # Write prompt to a temp file
+    $promptFile = "$LogFile.prompt.txt"
+    $Prompt | Set-Content $promptFile -Encoding UTF8 -NoNewline
+
+    # Build --add-dir arguments
+    $addDirArgs = "--add-dir `"$WorkingDir`""
+    foreach ($d in $ExtraDirs) {
+        $addDirArgs += " --add-dir `"$d`""
+    }
+
+    # Write a launcher script
+    $launcherFile = "$LogFile.launcher.ps1"
+    @"
+Set-Location "$WorkingDir"
+`$p = Get-Content "$promptFile" -Raw
+& copilot -p `$p $agentFlags --model $model $addDirArgs --share "$LogFile" *> "$LogFile.stdout"
+exit `$LASTEXITCODE
+"@ | Set-Content $launcherFile -Encoding UTF8
+
+    $startTime = Get-Date
+    $proc = Start-Process -FilePath "pwsh" -ArgumentList @("-NoProfile", "-File", $launcherFile) `
+        -NoNewWindow -PassThru
+
+    return @{
+        Process     = $proc
+        StartTime   = $startTime
+        Label       = $Label
+        LogFile     = $LogFile
+        PromptFile  = $promptFile
+        LauncherFile = $launcherFile
+    }
+}
+
+function Wait-CopilotAgents {
+    param(
+        [array]$Jobs,
+        [int]$PollIntervalSec = 10
+    )
+
+    $results = @()
+    $pending = [System.Collections.ArrayList]@($Jobs)
+    $total = $Jobs.Count
+
+    while ($pending.Count -gt 0) {
+        $completed = @()
+        foreach ($job in $pending) {
+            if ($job.Process.HasExited) {
+                $completed += $job
+            }
+        }
+
+        foreach ($job in $completed) {
+            $pending.Remove($job) | Out-Null
+            $duration = (Get-Date) - $job.StartTime
+            $exitCode = $job.Process.ExitCode
+            $ts = Get-Date -Format "HH:mm:ss"
+            $status = if ($exitCode -eq 0) { "OK" } else { "FAIL (exit $exitCode)" }
+            $color = if ($exitCode -eq 0) { "Green" } else { "Red" }
+            Write-Host "  [$ts][$($job.Label)] $status ($('{0:mm\:ss}' -f $duration)) [$($total - $pending.Count)/$total done]" -ForegroundColor $color
+
+            # Capture stdout
+            $stdout = ""
+            if (Test-Path "$($job.LogFile).stdout") {
+                $stdout = Get-Content "$($job.LogFile).stdout" -Raw -ErrorAction SilentlyContinue
+            }
+
+            # Clean up temp files
+            Remove-Item $job.PromptFile -ErrorAction SilentlyContinue
+            Remove-Item $job.LauncherFile -ErrorAction SilentlyContinue
+
+            $results += @{
+                ExitCode = $exitCode
+                Duration = $duration
+                LogFile  = $job.LogFile
+                Label    = $job.Label
+                Stdout   = $stdout
+            }
+        }
+
+        if ($pending.Count -gt 0) {
+            Start-Sleep -Seconds $PollIntervalSec
+        }
+    }
+
+    return $results
+}
+
+$script:Parallelism = 5
+
 function Parse-TestResults {
     param([string]$TrxPath)
 
@@ -230,16 +335,30 @@ function Invoke-Phase1 {
         Write-Host "  Including skills amendments from outer validation loop" -ForegroundColor Yellow
     }
 
-    $taskList = ($tasks | ForEach-Object { "  - $($_.disguised.className) at $($_.disguised.file)" }) -join "`n"
     $skillFiles = (Get-ChildItem "$testTasksRepo\skills\*.md" | ForEach-Object { $_.Name }) -join ", "
 
-    $prompt = @"
+    # Split tasks into batches for parallel execution
+    $batchSize = [math]::Ceiling($tasks.Count / $script:Parallelism)
+    $batches = @()
+    for ($b = 0; $b -lt $tasks.Count; $b += $batchSize) {
+        $end = [math]::Min($b + $batchSize, $tasks.Count)
+        $batches += ,@($tasks[$b..($end - 1)])
+    }
+
+    Write-Host "  Spawning $($batches.Count) parallel agents ($batchSize tasks each)..." -ForegroundColor Yellow
+
+    $jobs = @()
+    for ($bi = 0; $bi -lt $batches.Count; $bi++) {
+        $batch = $batches[$bi]
+        $batchTaskList = ($batch | ForEach-Object { "  - $($_.disguised.className) at $($_.disguised.file)" }) -join "`n"
+
+        $prompt = @"
 You are a migration planning agent. Your job is to analyze MSBuild tasks and produce migration prompts.
 
 WORKSPACE: $testTasksRepo
 SKILLS DOCS: Read ALL files in skills/ directory ($skillFiles)
-TASKS: There are $($tasks.Count) tasks in src/SdkTasks/ across these categories:
-$taskList
+TASKS: You are responsible for $($batch.Count) tasks:
+$batchTaskList
 
 $(if ($amendmentsContent) { "IMPORTANT - LESSONS FROM PREVIOUS ITERATIONS:`n$amendmentsContent`n" })
 For EACH task file:
@@ -256,15 +375,21 @@ Each prompt file must contain:
 - TDD steps: what test to write, expected fail reason, how to fix
 - ALL public properties that must be preserved on the migrated task
 
-Generate ALL $($tasks.Count) prompt files. Do not skip any task.
+Generate ALL $($batch.Count) prompt files. Do not skip any task.
 "@
 
-    $logFile = Join-Path (Get-IterationLogDir $Iter) "phase1-analysis.log"
-    $result = Invoke-CopilotAgent -Prompt $prompt -WorkingDir $testTasksRepo `
-        -LogFile $logFile -Label "Phase 1" -ExtraDirs @($migrationRepo)
+        $logFile = Join-Path (Get-IterationLogDir $Iter) "phase1-batch-$($bi + 1).log"
+        $job = Invoke-CopilotAgentAsync -Prompt $prompt -WorkingDir $testTasksRepo `
+            -LogFile $logFile -Label "P1-Batch$($bi + 1)" -ExtraDirs @($migrationRepo)
+        $jobs += $job
+    }
+
+    Write-Host "  Waiting for $($jobs.Count) agents..." -ForegroundColor Yellow
+    $results = Wait-CopilotAgents -Jobs $jobs
+    $failed = @($results | Where-Object { $_.ExitCode -ne 0 }).Count
 
     $promptCount = @(Get-ChildItem "$promptsDir\*.md" -ErrorAction SilentlyContinue).Count
-    Write-Host "  Generated $promptCount / $($tasks.Count) prompts" -ForegroundColor $(if ($promptCount -ge $tasks.Count) { "Green" } else { "Yellow" })
+    Write-Host "  Generated $promptCount / $($tasks.Count) prompts ($failed agent failures)" -ForegroundColor $(if ($promptCount -ge $tasks.Count) { "Green" } else { "Yellow" })
 }
 
 # ─── Phase 2: Test Scaffolding ───────────────────────────────────────────────
@@ -286,8 +411,9 @@ function Invoke-Phase2 {
     $refTestDir = Join-Path $migrationRepo "UnsafeThreadSafeTasks.Tests"
     $refInfra = Join-Path $refTestDir "Infrastructure"
 
-    $prompt = @"
-You are a test scaffolding agent. Create a complete xUnit test project for validating migrated MSBuild tasks.
+    # Phase 2a: Create test project and infrastructure (single agent - must complete first)
+    $infraPrompt = @"
+You are a test scaffolding agent. Create the test project infrastructure for validating migrated MSBuild tasks.
 
 WORKING REPO: $testTasksRepo
 REFERENCE REPO (read-only): $migrationRepo
@@ -308,17 +434,51 @@ STEP 2: Copy test infrastructure pattern from the reference repo
 - Adjust namespaces to SdkTasks.Tests.Infrastructure
 - The polyfills (TaskEnvironment, IMultiThreadableTask, MSBuildMultiThreadableTaskAttribute) are in src/SdkTasks/Polyfills/ - reference them via the project reference
 
-STEP 3: Create one test class per task (46 total)
-For each task in src/SdkTasks/, create a test file. Read the REFERENCE tests in $refTestDir to understand the patterns:
+STEP 3: Verify the test project builds (dotnet build)
+
+Only create the project and infrastructure. Do NOT create individual test files yet.
+"@
+
+    if (-not (Test-Path "$testsProject\SdkTasks.Tests.csproj")) {
+        Write-Host "  Creating test infrastructure (single agent)..." -ForegroundColor Yellow
+        $logFile = Join-Path (Get-IterationLogDir $Iter) "phase2-infra.log"
+        $result = Invoke-CopilotAgent -Prompt $infraPrompt -WorkingDir $testTasksRepo `
+            -LogFile $logFile -Label "P2-Infra" -ExtraDirs @($migrationRepo)
+    }
+
+    # Phase 2b: Create test files in parallel batches
+    $batchSize = [math]::Ceiling($tasks.Count / $script:Parallelism)
+    $batches = @()
+    for ($b = 0; $b -lt $tasks.Count; $b += $batchSize) {
+        $end = [math]::Min($b + $batchSize, $tasks.Count)
+        $batches += ,@($tasks[$b..($end - 1)])
+    }
+
+    Write-Host "  Spawning $($batches.Count) parallel agents for test file creation ($batchSize tasks each)..." -ForegroundColor Yellow
+
+    $jobs = @()
+    for ($bi = 0; $bi -lt $batches.Count; $bi++) {
+        $batch = $batches[$bi]
+        $batchTaskList = ($batch | ForEach-Object { "  - $($_.disguised.className) at $($_.disguised.file)" }) -join "`n"
+
+        $testPrompt = @"
+You are a test scaffolding agent. Create xUnit test classes for the following MSBuild tasks.
+
+WORKING REPO: $testTasksRepo
+REFERENCE REPO (read-only): $migrationRepo
+TEST PROJECT: $testsProject (already exists with Infrastructure/ helpers)
+
+Create one test class per task in tests/SdkTasks.Tests/:
+$batchTaskList
+
+Read the REFERENCE tests in $refTestDir to understand the patterns:
 - PathViolationTests.cs, EnvironmentViolationTests.cs, ComplexViolationTests.cs, etc.
 
 The mapping file at $mappingFile maps disguised names to original names. Use it to find the corresponding reference test.
 
 Each test class should have tests that verify CORRECT behavior (so they PASS on properly migrated tasks):
-1. Task implements IMultiThreadableTask interface
-2. Task has [MSBuildMultiThreadableTask] attribute  
-3. Task uses TaskEnvironment methods (GetAbsolutePath/GetCanonicalForm/GetEnvironmentVariable) instead of forbidden APIs
-4. Task resolves paths relative to ProjectDirectory (not process CWD)
+1. Task uses TaskEnvironment methods (GetAbsolutePath/GetCanonicalForm/GetEnvironmentVariable) instead of forbidden APIs
+2. Task resolves paths relative to ProjectDirectory (not process CWD)
 
 Key test pattern:
 - Create a temp directory different from process CWD (TestHelper.CreateNonCwdTempDirectory)
@@ -327,14 +487,19 @@ Key test pattern:
 - Use TrackingTaskEnvironment to verify TaskEnvironment methods were called
 - Assert paths resolve to temp dir (not CWD)
 
-STEP 4: Verify the test project builds (dotnet build)
-
-Generate ALL test files. Do not skip any task.
+Generate ALL $($batch.Count) test files. Do not skip any task.
 "@
 
-    $logFile = Join-Path (Get-IterationLogDir $Iter) "phase2-test-setup.log"
-    $result = Invoke-CopilotAgent -Prompt $prompt -WorkingDir $testTasksRepo `
-        -LogFile $logFile -Label "Phase 2" -ExtraDirs @($migrationRepo)
+        $logFile = Join-Path (Get-IterationLogDir $Iter) "phase2-tests-batch-$($bi + 1).log"
+        $job = Invoke-CopilotAgentAsync -Prompt $testPrompt -WorkingDir $testTasksRepo `
+            -LogFile $logFile -Label "P2-Batch$($bi + 1)" -ExtraDirs @($migrationRepo)
+        $jobs += $job
+    }
+
+    Write-Host "  Waiting for $($jobs.Count) test-creation agents..." -ForegroundColor Yellow
+    $results = Wait-CopilotAgents -Jobs $jobs
+    $failed = @($results | Where-Object { $_.ExitCode -ne 0 }).Count
+    Write-Host "  Test agents complete ($failed failures)" -ForegroundColor $(if ($failed -eq 0) { "Green" } else { "Yellow" })
 
     # Verify build
     Write-Host "  Verifying test project builds..." -ForegroundColor Gray
@@ -367,27 +532,32 @@ function Invoke-Phase3 {
 
     $taskResults = @()
     $iterLogDir = Get-IterationLogDir $Iter
-    $taskIndex = 0
 
-    foreach ($task in $tasks) {
-        $taskIndex++
-        $className = $task.disguised.className
-        $filePath  = $task.disguised.file -replace '/', '\'
-        $category  = $task.disguised.category
-        $fullTaskPath = Join-Path $testTasksRepo "src\SdkTasks\$filePath"
+    # Process tasks in waves of $Parallelism
+    for ($wave = 0; $wave -lt $tasks.Count; $wave += $script:Parallelism) {
+        $waveEnd = [math]::Min($wave + $script:Parallelism, $tasks.Count)
+        $waveTasks = @($tasks[$wave..($waveEnd - 1)])
+        $waveNum = [math]::Floor($wave / $script:Parallelism) + 1
+        $totalWaves = [math]::Ceiling($tasks.Count / $script:Parallelism)
 
         Write-Host ""
-        Write-Host "  ── [$taskIndex/$($tasks.Count)] $className ($category) ──" -ForegroundColor White
-        Write-Host "  $(Get-Date -Format 'HH:mm:ss') File: $filePath" -ForegroundColor DarkGray
+        Write-Host "  --- Wave $waveNum/${totalWaves}: Tasks $($wave + 1)-$waveEnd of $($tasks.Count) ---" -ForegroundColor White
 
-        # Phase 3a: Migration Agent
-        $promptFile = Join-Path $promptsDir "$className.md"
-        $promptContent = ""
-        if (Test-Path $promptFile) {
-            $promptContent = Get-Content $promptFile -Raw
-        }
+        # Phase 3a: Launch migration agents in parallel
+        $migrateJobs = @()
+        foreach ($task in $waveTasks) {
+            $className = $task.disguised.className
+            $filePath  = $task.disguised.file -replace '/', '\'
+            $category  = $task.disguised.category
+            $fullTaskPath = Join-Path $testTasksRepo "src\SdkTasks\$filePath"
 
-        $migratePrompt = @"
+            $promptFile = Join-Path $promptsDir "$className.md"
+            $promptContent = ""
+            if (Test-Path $promptFile) {
+                $promptContent = Get-Content $promptFile -Raw
+            }
+
+            $migratePrompt = @"
 You are a migration agent. Migrate this MSBuild task to be properly thread-safe.
 
 TASK FILE: $fullTaskPath
@@ -420,12 +590,24 @@ After migrating, verify the file compiles: dotnet build $testTasksRepo\src\SdkTa
 Do NOT run tests. Do NOT run the full test suite. Only build to verify compilation.
 "@
 
-        $migrateLog = Join-Path $iterLogDir "migrate-$className.log"
-        $migrateResult = Invoke-CopilotAgent -Prompt $migratePrompt -WorkingDir $testTasksRepo `
-            -LogFile $migrateLog -Label "Migrate" -ExtraDirs @($migrationRepo)
+            $migrateLog = Join-Path $iterLogDir "migrate-$className.log"
+            $job = Invoke-CopilotAgentAsync -Prompt $migratePrompt -WorkingDir $testTasksRepo `
+                -LogFile $migrateLog -Label "Mig:$className" -ExtraDirs @($migrationRepo)
+            $job.TaskMeta = @{ ClassName = $className; Category = $category; FilePath = $filePath }
+            $migrateJobs += $job
+        }
 
-        # Phase 3b: Check Agent
-        $checkPrompt = @"
+        Write-Host "  Waiting for $($migrateJobs.Count) migration agents..." -ForegroundColor Yellow
+        $migrateResults = Wait-CopilotAgents -Jobs $migrateJobs
+
+        # Phase 3b: Launch check agents in parallel for this wave
+        $checkJobs = @()
+        for ($j = 0; $j -lt $waveTasks.Count; $j++) {
+            $task = $waveTasks[$j]
+            $className = $task.disguised.className
+            $fullTaskPath = Join-Path $testTasksRepo "src\SdkTasks\$($task.disguised.file -replace '/', '\')"
+
+            $checkPrompt = @"
 You are a migration checker agent. Verify that the task migration was done correctly.
 
 TASK FILE: $fullTaskPath
@@ -445,23 +627,35 @@ Steps:
 Report PASS or FAIL as the last line of your output.
 "@
 
-        $checkLog = Join-Path $iterLogDir "check-$className.log"
-        $checkResult = Invoke-CopilotAgent -Prompt $checkPrompt -WorkingDir $testTasksRepo `
-            -LogFile $checkLog -Label "Check" -ExtraDirs @($migrationRepo)
-
-        $taskResults += @{
-            TaskName      = $className
-            Category      = $category
-            FilePath      = $filePath
-            MigrationExit = $migrateResult.ExitCode
-            CheckExit     = $checkResult.ExitCode
+            $checkLog = Join-Path $iterLogDir "check-$className.log"
+            $cjob = Invoke-CopilotAgentAsync -Prompt $checkPrompt -WorkingDir $testTasksRepo `
+                -LogFile $checkLog -Label "Chk:$className" -ExtraDirs @($migrationRepo)
+            $cjob.TaskMeta = @{ ClassName = $className; MigrateResult = $migrateResults[$j] }
+            $checkJobs += $cjob
         }
 
-        # Per-task summary
-        $migOk = $migrateResult.ExitCode -eq 0
-        $chkOk = $checkResult.ExitCode -eq 0
-        $taskStatus = if ($migOk -and $chkOk) { "✅ PASS" } elseif ($migOk) { "⚠️  CHECK FAILED" } else { "❌ MIGRATE FAILED" }
-        Write-Host "  $(Get-Date -Format 'HH:mm:ss') Result: $taskStatus | Migrate: $('{0:mm\:ss}' -f $migrateResult.Duration) | Check: $('{0:mm\:ss}' -f $checkResult.Duration)" -ForegroundColor $(if ($migOk -and $chkOk) { "Green" } else { "Yellow" })
+        Write-Host "  Waiting for $($checkJobs.Count) check agents..." -ForegroundColor Yellow
+        $checkResults = Wait-CopilotAgents -Jobs $checkJobs
+
+        # Collect results for this wave
+        for ($j = 0; $j -lt $waveTasks.Count; $j++) {
+            $task = $waveTasks[$j]
+            $migResult = $migrateResults[$j]
+            $chkResult = $checkResults[$j]
+            $taskResults += @{
+                TaskName      = $task.disguised.className
+                Category      = $task.disguised.category
+                FilePath      = $task.disguised.file
+                MigrationExit = $migResult.ExitCode
+                CheckExit     = $chkResult.ExitCode
+            }
+
+            $migOk = $migResult.ExitCode -eq 0
+            $chkOk = $chkResult.ExitCode -eq 0
+            $taskStatus = if ($migOk -and $chkOk) { "PASS" } elseif ($migOk) { "CHECK FAILED" } else { "MIGRATE FAILED" }
+            $color = if ($migOk -and $chkOk) { "Green" } else { "Yellow" }
+            Write-Host "    $($task.disguised.className): $taskStatus" -ForegroundColor $color
+        }
     }
 
     # Phase 3 summary
