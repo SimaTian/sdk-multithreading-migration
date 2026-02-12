@@ -20,11 +20,11 @@ namespace UnsafeThreadSafeTasks.SubtleViolations
 
         public override bool Execute()
         {
-            // First resolution is correct
-            var resolved = TaskEnvironment.GetAbsolutePath(InputPath);
+            // VIOLATION: Uses Path.GetFullPath directly on the relative input,
+            // resolving against process CWD instead of ProjectDirectory.
+            var resolved = Path.GetFullPath(InputPath);
 
-            // Second resolution re-invokes Path.GetFullPath, which relies on
-            // the process-wide current directory — unsafe in parallel builds.
+            // Second resolution is also CWD-based — the entire chain is wrong.
             var canonical = Path.GetFullPath(resolved);
 
             CanonicalPath = canonical;

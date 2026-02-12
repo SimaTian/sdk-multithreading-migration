@@ -96,6 +96,9 @@ namespace UnsafeThreadSafeTasks.ComplexViolations
 
         private ItemData NormalizePaths(ItemData data)
         {
+            // Skip normalization for ExternalReference — resolved separately in ResolveGroupPaths
+            if (string.Equals(data.Category, "ExternalReference", StringComparison.OrdinalIgnoreCase))
+                return data;
             string normalized = TaskEnvironment.GetCanonicalForm(data.Path);
             return data with { Path = normalized };
         }

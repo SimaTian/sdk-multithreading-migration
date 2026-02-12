@@ -1,0 +1,16 @@
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\obj\Debug\net8.0\UnsafeThreadSafeTasks.csproj.AssemblyReference.cache
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\obj\Debug\net8.0\UnsafeThreadSafeTasks.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\obj\Debug\net8.0\UnsafeThreadSafeTasks.AssemblyInfoInputs.cache
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\obj\Debug\net8.0\UnsafeThreadSafeTasks.AssemblyInfo.cs
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\obj\Debug\net8.0\UnsafeThreadSafeTasks.csproj.CoreCompileInputs.cache
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\obj\Debug\net8.0\UnsafeThreadSafeTasks.sourcelink.json
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\bin\Debug\net8.0\UnsafeThreadSafeTasks.deps.json
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\bin\Debug\net8.0\UnsafeThreadSafeTasks.dll
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\bin\Debug\net8.0\UnsafeThreadSafeTasks.pdb
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\obj\Debug\net8.0\UnsafeThreadSafeTasks.dll
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\obj\Debug\net8.0\refint\UnsafeThreadSafeTasks.dll
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\obj\Debug\net8.0\UnsafeThreadSafeTasks.pdb
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\obj\Debug\net8.0\ref\UnsafeThreadSafeTasks.dll
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\bin\Debug\net8.0\SharedPolyfills.dll
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\bin\Debug\net8.0\SharedPolyfills.pdb
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks\obj\Debug\net8.0\UnsafeTh.95E28D9C.Up2Date

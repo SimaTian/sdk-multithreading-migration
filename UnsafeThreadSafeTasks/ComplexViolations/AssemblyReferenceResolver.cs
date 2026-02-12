@@ -119,12 +119,13 @@ namespace UnsafeThreadSafeTasks.ComplexViolations
                 Path.Combine("packs", $"Microsoft.NETCore.App.Ref", targetFx, "ref"));
             paths.Add(refPackPath);
 
-            // BUG: uses Path.GetFullPath instead of TaskEnvironment.GetAbsolutePath for runtime pack
-            string? dotnetRoot = TaskEnvironment.GetEnvironmentVariable("DOTNET_ROOT");
+            // BUG: reads DOTNET_ROOT from global Environment instead of TaskEnvironment
+            string? dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
             if (!string.IsNullOrEmpty(dotnetRoot))
             {
                 string runtimePackPath = Path.Combine(dotnetRoot, "packs",
                     "Microsoft.NETCore.App.Runtime." + rid, targetFx, "runtimes", rid, "lib", targetFx);
+                // BUG: also uses Path.GetFullPath instead of TaskEnvironment.GetAbsolutePath
                 string resolvedRuntimePack = Path.GetFullPath(runtimePackPath);
                 paths.Add(resolvedRuntimePack);
                 Log.LogMessage(MessageImportance.Low, "Runtime pack: {0}", resolvedRuntimePack);

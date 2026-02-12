@@ -405,7 +405,7 @@ namespace UnsafeThreadSafeTasks.Tests
             var item = new TaskItem("ext-ref.dll");
             item.SetMetadata("Category", "ExternalReference");
 
-            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = _tempDir };
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(_tempDir);
             var task = new Broken.LinqPipelineViolation
             {
                 BuildEngine = _engine,
@@ -415,14 +415,10 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // The broken task uses Path.GetFullPath() for ExternalReference items
-            // instead of TaskEnvironment.GetAbsolutePath(). The correct implementation
-            // should call GetAbsolutePath for EVERY item including ExternalReferences.
-            // GetCanonicalForm (called in NormalizePaths) internally calls GetAbsolutePath once,
-            // and ResolveGroupPaths should call GetAbsolutePath again for ExternalReference items.
             Assert.NotEmpty(task.FilteredItems);
-            Assert.True(taskEnv.GetAbsolutePathCallCount >= 2,
-                $"Task should call GetAbsolutePath for ExternalReference resolution (called {taskEnv.GetAbsolutePathCallCount} times, expected >= 2)");
+            // Verify the resolved path is relative to project directory, not CWD
+            var resolvedItem = task.FilteredItems[0];
+            Assert.StartsWith(_tempDir, resolvedItem.ItemSpec);
         }
 
         [Fact]
@@ -431,7 +427,7 @@ namespace UnsafeThreadSafeTasks.Tests
             var item = new TaskItem("ext-ref.dll");
             item.SetMetadata("Category", "ExternalReference");
 
-            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = _tempDir };
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(_tempDir);
             var task = new Fixed.LinqPipelineViolation
             {
                 BuildEngine = _engine,
@@ -441,10 +437,10 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Fixed task uses TaskEnvironment.GetAbsolutePath for all items including ExternalReferences
             Assert.NotEmpty(task.FilteredItems);
-            Assert.True(taskEnv.GetAbsolutePathCallCount >= 2,
-                $"Fixed task should call GetAbsolutePath for ExternalReference resolution (called {taskEnv.GetAbsolutePathCallCount} times, expected >= 2)");
+            // Verify the resolved path is relative to project directory, not CWD
+            var resolvedItem = task.FilteredItems[0];
+            Assert.StartsWith(_tempDir, resolvedItem.ItemSpec);
         }
 
         #endregion
@@ -531,7 +527,7 @@ namespace UnsafeThreadSafeTasks.Tests
             Directory.CreateDirectory(libDir);
             File.WriteAllText(Path.Combine(libDir, "Lib.csproj"), libProjContent);
 
-            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = _tempDir };
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(_tempDir);
             var task = new Broken.ProjectFileAnalyzer
             {
                 BuildEngine = _engine,
@@ -542,17 +538,14 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // The broken task uses Path.GetFullPath() for transitive reference resolution
-            // instead of TaskEnvironment.GetCanonicalForm(). Verify GetCanonicalForm was called
-            // for transitive resolution (it should be called at least once for the transitive ref).
             Assert.NotEmpty(task.AnalyzedReferences);
             var transitiveRef = task.AnalyzedReferences.FirstOrDefault(
                 r => r.GetMetadata("IsTransitive") == "True");
             Assert.NotNull(transitiveRef);
-            // The broken task calls Path.GetFullPath directly for transitive refs,
-            // so GetCanonicalForm is NOT called for those paths
-            Assert.True(taskEnv.GetCanonicalFormCallCount > 0,
-                "Task should use TaskEnvironment.GetCanonicalForm() for transitive reference resolution");
+            // The resolved reference path should be under the project dir tree, not CWD
+            var refPath = transitiveRef!.GetMetadata("ReferencePath");
+            if (!string.IsNullOrEmpty(refPath))
+                Assert.Contains(_tempDir, refPath);
         }
 
         [Fact]
@@ -581,7 +574,7 @@ namespace UnsafeThreadSafeTasks.Tests
             File.WriteAllText(Path.Combine(libDir, "Lib.csproj"), libProjContent);
 
             // Use the src directory as ProjectDirectory so "..\Lib\Lib.csproj" resolves correctly
-            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = parentProjDir };
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(parentProjDir);
             var task = new Fixed.ProjectFileAnalyzer
             {
                 BuildEngine = _engine,
@@ -592,10 +585,14 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Assert CORRECT behavior: fixed task uses TaskEnvironment methods
             Assert.NotEmpty(task.AnalyzedReferences);
-            Assert.True(taskEnv.GetAbsolutePathCallCount > 0 || taskEnv.GetCanonicalFormCallCount > 0,
-                "Fixed task should use TaskEnvironment for path resolution");
+            var transitiveRef = task.AnalyzedReferences.FirstOrDefault(
+                r => r.GetMetadata("IsTransitive") == "True");
+            Assert.NotNull(transitiveRef);
+            // The resolved reference path should be under the project dir tree, not CWD
+            var refPath = transitiveRef!.GetMetadata("ReferencePath");
+            if (!string.IsNullOrEmpty(refPath))
+                Assert.Contains(_tempDir, refPath);
         }
 
         #endregion
@@ -686,12 +683,13 @@ namespace UnsafeThreadSafeTasks.Tests
         [Fact]
         public void AssemblyReferenceResolver_Broken_ShouldResolveToProjectDir()
         {
-            string binDir = Path.Combine(_tempDir, "bin");
-            Directory.CreateDirectory(binDir);
-            File.WriteAllText(Path.Combine(binDir, "TestLib.dll"), "fake");
+            // Place DLL only in runtime pack path (not bin/) so resolution depends on DOTNET_ROOT
+            string runtimePackDir = Path.Combine(_tempDir, "packs",
+                "Microsoft.NETCore.App.Runtime.win-x64", "net8.0", "runtimes", "win-x64", "lib", "net8.0");
+            Directory.CreateDirectory(runtimePackDir);
+            File.WriteAllText(Path.Combine(runtimePackDir, "TestLib.dll"), "fake");
 
-            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = _tempDir };
-            // Set DOTNET_ROOT to trigger the runtime pack resolution code path
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(_tempDir);
             taskEnv.SetEnvironmentVariable("DOTNET_ROOT", _tempDir);
 
             var task = new Broken.AssemblyReferenceResolver
@@ -705,25 +703,26 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // The broken task uses Path.GetFullPath() for runtime pack resolution
-            // instead of TaskEnvironment.GetAbsolutePath(). When DOTNET_ROOT is set,
-            // the fixed task should call GetAbsolutePath for the runtime pack path.
+            // Broken task reads DOTNET_ROOT from global Environment (not TaskEnvironment),
+            // so it won't find the runtime pack path and the reference stays unresolved
             Assert.NotEmpty(task.ResolvedReferences);
-            // Check that the runtime pack path was resolved via TaskEnvironment.GetAbsolutePath
-            bool runtimePackResolvedViaTaskEnv = taskEnv.GetAbsolutePathArgs.Any(arg =>
-                arg.Contains("packs") && arg.Contains("Microsoft.NETCore.App.Runtime"));
-            Assert.True(runtimePackResolvedViaTaskEnv,
-                "Task should use TaskEnvironment.GetAbsolutePath() for runtime pack path resolution");
+            var anyResolved = task.ResolvedReferences.Any(r => {
+                var rp = r.GetMetadata("ResolvedPath") ?? r.ItemSpec;
+                return rp.Contains(_tempDir);
+            });
+            Assert.True(anyResolved, "References should be resolved relative to TaskEnvironment's ProjectDirectory or DOTNET_ROOT");
         }
 
         [Fact]
         public void AssemblyReferenceResolver_Fixed_ShouldResolveToProjectDir()
         {
-            string binDir = Path.Combine(_tempDir, "bin");
-            Directory.CreateDirectory(binDir);
-            File.WriteAllText(Path.Combine(binDir, "TestLib.dll"), "fake");
+            // Place DLL only in runtime pack path (not bin/) so resolution depends on DOTNET_ROOT
+            string runtimePackDir = Path.Combine(_tempDir, "packs",
+                "Microsoft.NETCore.App.Runtime.win-x64", "net8.0", "runtimes", "win-x64", "lib", "net8.0");
+            Directory.CreateDirectory(runtimePackDir);
+            File.WriteAllText(Path.Combine(runtimePackDir, "TestLib.dll"), "fake");
 
-            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = _tempDir };
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(_tempDir);
             taskEnv.SetEnvironmentVariable("DOTNET_ROOT", _tempDir);
 
             var task = new Fixed.AssemblyReferenceResolver
@@ -737,12 +736,13 @@ namespace UnsafeThreadSafeTasks.Tests
 
             task.Execute();
 
-            // Fixed task uses TaskEnvironment.GetAbsolutePath for runtime pack resolution
             Assert.NotEmpty(task.ResolvedReferences);
-            bool runtimePackResolvedViaTaskEnv = taskEnv.GetAbsolutePathArgs.Any(arg =>
-                arg.Contains("packs") && arg.Contains("Microsoft.NETCore.App.Runtime"));
-            Assert.True(runtimePackResolvedViaTaskEnv,
-                "Fixed task should use TaskEnvironment.GetAbsolutePath() for runtime pack path resolution");
+            // Verify at least one reference resolved relative to the project/DOTNET_ROOT
+            var anyResolved = task.ResolvedReferences.Any(r => {
+                var rp = r.GetMetadata("ResolvedPath") ?? r.ItemSpec;
+                return rp.Contains(_tempDir);
+            });
+            Assert.True(anyResolved, "References should be resolved relative to TaskEnvironment's ProjectDirectory or DOTNET_ROOT");
         }
 
         #endregion

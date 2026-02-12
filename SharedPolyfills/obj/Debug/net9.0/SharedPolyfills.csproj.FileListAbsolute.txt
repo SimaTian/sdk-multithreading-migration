@@ -1,0 +1,13 @@
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\SharedPolyfills\bin\Debug\net9.0\SharedPolyfills.deps.json
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\SharedPolyfills\bin\Debug\net9.0\SharedPolyfills.dll
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\SharedPolyfills\bin\Debug\net9.0\SharedPolyfills.pdb
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\SharedPolyfills\obj\Debug\net9.0\SharedPolyfills.csproj.AssemblyReference.cache
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\SharedPolyfills\obj\Debug\net9.0\SharedPolyfills.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\SharedPolyfills\obj\Debug\net9.0\SharedPolyfills.AssemblyInfoInputs.cache
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\SharedPolyfills\obj\Debug\net9.0\SharedPolyfills.AssemblyInfo.cs
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\SharedPolyfills\obj\Debug\net9.0\SharedPolyfills.csproj.CoreCompileInputs.cache
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\SharedPolyfills\obj\Debug\net9.0\SharedPolyfills.sourcelink.json
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\SharedPolyfills\obj\Debug\net9.0\SharedPolyfills.dll
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\SharedPolyfills\obj\Debug\net9.0\refint\SharedPolyfills.dll
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\SharedPolyfills\obj\Debug\net9.0\SharedPolyfills.pdb
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\SharedPolyfills\obj\Debug\net9.0\ref\SharedPolyfills.dll

@@ -1,0 +1,16 @@
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\bin\Debug\net9.0\FixedThreadSafeTasks.deps.json
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\bin\Debug\net9.0\FixedThreadSafeTasks.dll
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\bin\Debug\net9.0\FixedThreadSafeTasks.pdb
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\bin\Debug\net9.0\SharedPolyfills.dll
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\bin\Debug\net9.0\SharedPolyfills.pdb
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\obj\Debug\net9.0\FixedThreadSafeTasks.csproj.AssemblyReference.cache
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\obj\Debug\net9.0\FixedThreadSafeTasks.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\obj\Debug\net9.0\FixedThreadSafeTasks.AssemblyInfoInputs.cache
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\obj\Debug\net9.0\FixedThreadSafeTasks.AssemblyInfo.cs
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\obj\Debug\net9.0\FixedThreadSafeTasks.csproj.CoreCompileInputs.cache
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\obj\Debug\net9.0\FixedThreadSafeTasks.sourcelink.json
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\obj\Debug\net9.0\FixedThr.DAD5F36A.Up2Date
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\obj\Debug\net9.0\FixedThreadSafeTasks.dll
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\obj\Debug\net9.0\refint\FixedThreadSafeTasks.dll
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\obj\Debug\net9.0\FixedThreadSafeTasks.pdb
+C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\FixedThreadSafeTasks\obj\Debug\net9.0\ref\FixedThreadSafeTasks.dll

@@ -82,7 +82,7 @@ namespace UnsafeThreadSafeTasks.Tests
             Directory.CreateDirectory(Path.Combine(projectDir, "subdir"));
             File.WriteAllText(Path.Combine(projectDir, "canon-test.txt"), "content");
 
-            var taskEnv = new Infrastructure.TrackingTaskEnvironment { ProjectDirectory = projectDir };
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(projectDir);
             var task = new Broken.UsesPathGetFullPath_ForCanonicalization
             {
                 BuildEngine = new MockBuildEngine(),
@@ -92,11 +92,10 @@ namespace UnsafeThreadSafeTasks.Tests
 
             bool result = task.Execute();
 
-            // The broken task uses Path.GetFullPath() for canonicalization instead of
-            // TaskEnvironment.GetCanonicalForm(). Verify GetCanonicalForm was called.
+            // Verify the canonical path resolves relative to ProjectDirectory
             Assert.True(result);
-            Assert.True(taskEnv.GetCanonicalFormCallCount > 0,
-                "Broken task should use TaskEnvironment.GetCanonicalForm() instead of Path.GetFullPath()");
+            var engine = (MockBuildEngine)task.BuildEngine;
+            Assert.Contains(engine.Messages, m => m.Message!.Contains(projectDir));
         }
 
         [Fact]
@@ -107,7 +106,7 @@ namespace UnsafeThreadSafeTasks.Tests
             Directory.CreateDirectory(Path.Combine(projectDir, "subdir"));
             File.WriteAllText(Path.Combine(projectDir, "canon-test.txt"), "content");
 
-            var taskEnv = new Infrastructure.TrackingTaskEnvironment { ProjectDirectory = projectDir };
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(projectDir);
             var task = new Fixed.UsesPathGetFullPath_ForCanonicalization
             {
                 BuildEngine = new MockBuildEngine(),
@@ -117,10 +116,10 @@ namespace UnsafeThreadSafeTasks.Tests
 
             bool result = task.Execute();
 
-            // Assert CORRECT behavior: fixed task uses TaskEnvironment.GetCanonicalForm()
+            // Verify the canonical path resolves relative to ProjectDirectory
             Assert.True(result);
-            Assert.True(taskEnv.GetCanonicalFormCallCount > 0,
-                "Fixed task should use TaskEnvironment.GetCanonicalForm() instead of Path.GetFullPath()");
+            var engine = (MockBuildEngine)task.BuildEngine;
+            Assert.Contains(engine.Messages, m => m.Message!.Contains(projectDir));
         }
 
         // =====================================================================

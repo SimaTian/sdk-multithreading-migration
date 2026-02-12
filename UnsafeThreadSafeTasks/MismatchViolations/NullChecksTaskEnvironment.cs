@@ -20,9 +20,12 @@ namespace UnsafeThreadSafeTasks.MismatchViolations
         {
             string resolved;
 
+            // VIOLATION: Null-checks TaskEnvironment (MSBuild always provides it),
+            // and uses Path.GetFullPath in both branches — the null check is pointless.
             if (TaskEnvironment != null)
             {
-                resolved = TaskEnvironment.GetAbsolutePath(InputPath);
+                // Looks like it might use TaskEnvironment but doesn't
+                resolved = Path.GetFullPath(InputPath);
             }
             else
             {

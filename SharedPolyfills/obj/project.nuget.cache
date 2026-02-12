@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "dgSpecHash": "GYmBa2Ni1Iw=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\tbartonek\\agent-workspace\\sdk-multithreading-migration\\SharedPolyfills\\SharedPolyfills.csproj",
+  "expectedPackageFiles": [
+    "C:\\Nuget\\microsoft.build.framework\\17.12.6\\microsoft.build.framework.17.12.6.nupkg.sha512",
+    "C:\\Nuget\\microsoft.build.utilities.core\\17.12.6\\microsoft.build.utilities.core.17.12.6.nupkg.sha512",
+    "C:\\Nuget\\microsoft.net.stringtools\\17.12.6\\microsoft.net.stringtools.17.12.6.nupkg.sha512",
+    "C:\\Nuget\\system.collections.immutable\\8.0.0\\system.collections.immutable.8.0.0.nupkg.sha512",
+    "C:\\Nuget\\system.configuration.configurationmanager\\8.0.0\\system.configuration.configurationmanager.8.0.0.nupkg.sha512",
+    "C:\\Nuget\\system.diagnostics.eventlog\\8.0.0\\system.diagnostics.eventlog.8.0.0.nupkg.sha512",
+    "C:\\Nuget\\system.security.cryptography.protecteddata\\8.0.0\\system.security.cryptography.protecteddata.8.0.0.nupkg.sha512"
+  ],
+  "logs": []
+}

@@ -1,0 +1,30 @@
+{
+  "version": 2,
+  "dgSpecHash": "KWs867J3AR0=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\tbartonek\\agent-workspace\\sdk-multithreading-migration\\UnsafeThreadSafeTasks.Tests\\UnsafeThreadSafeTasks.Tests.csproj",
+  "expectedPackageFiles": [
+    "C:\\Nuget\\microsoft.build.framework\\17.12.6\\microsoft.build.framework.17.12.6.nupkg.sha512",
+    "C:\\Nuget\\microsoft.build.utilities.core\\17.12.6\\microsoft.build.utilities.core.17.12.6.nupkg.sha512",
+    "C:\\Nuget\\microsoft.codecoverage\\17.9.0\\microsoft.codecoverage.17.9.0.nupkg.sha512",
+    "C:\\Nuget\\microsoft.net.stringtools\\17.12.6\\microsoft.net.stringtools.17.12.6.nupkg.sha512",
+    "C:\\Nuget\\microsoft.net.test.sdk\\17.9.0\\microsoft.net.test.sdk.17.9.0.nupkg.sha512",
+    "C:\\Nuget\\microsoft.testplatform.objectmodel\\17.9.0\\microsoft.testplatform.objectmodel.17.9.0.nupkg.sha512",
+    "C:\\Nuget\\microsoft.testplatform.testhost\\17.9.0\\microsoft.testplatform.testhost.17.9.0.nupkg.sha512",
+    "C:\\Nuget\\newtonsoft.json\\13.0.1\\newtonsoft.json.13.0.1.nupkg.sha512",
+    "C:\\Nuget\\system.collections.immutable\\8.0.0\\system.collections.immutable.8.0.0.nupkg.sha512",
+    "C:\\Nuget\\system.configuration.configurationmanager\\8.0.0\\system.configuration.configurationmanager.8.0.0.nupkg.sha512",
+    "C:\\Nuget\\system.diagnostics.eventlog\\8.0.0\\system.diagnostics.eventlog.8.0.0.nupkg.sha512",
+    "C:\\Nuget\\system.reflection.metadata\\1.6.0\\system.reflection.metadata.1.6.0.nupkg.sha512",
+    "C:\\Nuget\\system.security.cryptography.protecteddata\\8.0.0\\system.security.cryptography.protecteddata.8.0.0.nupkg.sha512",
+    "C:\\Nuget\\xunit\\2.7.0\\xunit.2.7.0.nupkg.sha512",
+    "C:\\Nuget\\xunit.abstractions\\2.0.3\\xunit.abstractions.2.0.3.nupkg.sha512",
+    "C:\\Nuget\\xunit.analyzers\\1.11.0\\xunit.analyzers.1.11.0.nupkg.sha512",
+    "C:\\Nuget\\xunit.assert\\2.7.0\\xunit.assert.2.7.0.nupkg.sha512",
+    "C:\\Nuget\\xunit.core\\2.7.0\\xunit.core.2.7.0.nupkg.sha512",
+    "C:\\Nuget\\xunit.extensibility.core\\2.7.0\\xunit.extensibility.core.2.7.0.nupkg.sha512",
+    "C:\\Nuget\\xunit.extensibility.execution\\2.7.0\\xunit.extensibility.execution.2.7.0.nupkg.sha512",
+    "C:\\Nuget\\xunit.runner.visualstudio\\2.5.7\\xunit.runner.visualstudio.2.5.7.nupkg.sha512"
+  ],
+  "logs": []
+}

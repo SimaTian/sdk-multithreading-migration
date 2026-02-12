@@ -232,7 +232,7 @@ namespace UnsafeThreadSafeTasks.Tests
             var fileName = "double-test.txt";
             File.WriteAllText(Path.Combine(_projectDir, fileName), "data");
 
-            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = _projectDir };
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(_projectDir);
             var task = new BrokenSubtle.DoubleResolvesPath
             {
                 BuildEngine = _engine,
@@ -242,11 +242,8 @@ namespace UnsafeThreadSafeTasks.Tests
 
             bool result = task.Execute();
 
-            // The broken task uses Path.GetFullPath() instead of TaskEnvironment.GetCanonicalForm()
-            // so GetCanonicalForm should NOT have been called
             Assert.True(result);
-            Assert.True(taskEnv.GetCanonicalFormCallCount > 0,
-                "Broken task should use TaskEnvironment.GetCanonicalForm() instead of Path.GetFullPath()");
+            Assert.StartsWith(_projectDir, task.CanonicalPath);
         }
 
         [Fact]
@@ -255,7 +252,7 @@ namespace UnsafeThreadSafeTasks.Tests
             var fileName = "double-test.txt";
             File.WriteAllText(Path.Combine(_projectDir, fileName), "data");
 
-            var taskEnv = new TrackingTaskEnvironment { ProjectDirectory = _projectDir };
+            var taskEnv = TaskEnvironmentHelper.CreateForTest(_projectDir);
             var task = new FixedSubtle.DoubleResolvesPath
             {
                 BuildEngine = _engine,
@@ -265,10 +262,8 @@ namespace UnsafeThreadSafeTasks.Tests
 
             bool result = task.Execute();
 
-            // Assert CORRECT behavior: fixed task uses TaskEnvironment.GetCanonicalForm()
             Assert.True(result);
-            Assert.True(taskEnv.GetCanonicalFormCallCount > 0,
-                "Fixed task should use TaskEnvironment.GetCanonicalForm() instead of Path.GetFullPath()");
+            Assert.StartsWith(_projectDir, task.CanonicalPath);
         }
 
         #endregion
