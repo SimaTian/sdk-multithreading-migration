@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Agentic Migration Pipeline Harness
 .DESCRIPTION
