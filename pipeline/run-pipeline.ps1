@@ -76,10 +76,12 @@ function Invoke-CopilotAgent {
 
     # Write a launcher script to isolate quoting from the parent shell
     $launcherFile = "$LogFile.launcher.ps1"
+    $exitCodeFile = "$LogFile.exitcode"
     @"
 Set-Location "$WorkingDir"
 `$p = Get-Content "$promptFile" -Raw
 & copilot -p `$p $agentFlags --model $model $addDirArgs --share "$LogFile" *> "$LogFile.stdout"
+`$LASTEXITCODE | Set-Content "$exitCodeFile" -NoNewline
 exit `$LASTEXITCODE
 "@ | Set-Content $launcherFile -Encoding UTF8
 
@@ -88,7 +90,16 @@ exit `$LASTEXITCODE
         -NoNewWindow -Wait -PassThru
     $duration = (Get-Date) - $startTime
 
-    $exitCode = $proc.ExitCode
+    # Read exit code from file (more reliable than Process.ExitCode)
+    $exitCode = $null
+    if (Test-Path $exitCodeFile) {
+        $raw = (Get-Content $exitCodeFile -Raw).Trim()
+        if ($raw -match '^\d+$') { $exitCode = [int]$raw }
+        Remove-Item $exitCodeFile -ErrorAction SilentlyContinue
+    }
+    if ($null -eq $exitCode) {
+        try { $exitCode = $proc.ExitCode } catch { $exitCode = -1 }
+    }
     $ts = Get-Date -Format "HH:mm:ss"
     $status = if ($exitCode -eq 0) { "OK" } else { "FAIL (exit $exitCode)" }
     $color = if ($exitCode -eq 0) { "Green" } else { "Red" }
@@ -151,25 +162,27 @@ function Invoke-CopilotAgentAsync {
         $addDirArgs += " --add-dir `"$d`""
     }
 
-    # Write a launcher script
+    # Write a launcher script that captures exit code to a file
     $launcherFile = "$LogFile.launcher.ps1"
+    $exitCodeFile = "$LogFile.exitcode"
     @"
 Set-Location "$WorkingDir"
 `$p = Get-Content "$promptFile" -Raw
 & copilot -p `$p $agentFlags --model $model $addDirArgs --share "$LogFile" *> "$LogFile.stdout"
+`$LASTEXITCODE | Set-Content "$exitCodeFile" -NoNewline
 exit `$LASTEXITCODE
 "@ | Set-Content $launcherFile -Encoding UTF8
 
     $startTime = Get-Date
     $proc = Start-Process -FilePath "pwsh" -ArgumentList @("-NoProfile", "-File", $launcherFile) `
         -NoNewWindow -PassThru
-
+    
     return @{
-        Process     = $proc
-        StartTime   = $startTime
-        Label       = $Label
-        LogFile     = $LogFile
-        PromptFile  = $promptFile
+        Process      = $proc
+        StartTime    = $startTime
+        Label        = $Label
+        LogFile      = $LogFile
+        PromptFile   = $promptFile
         LauncherFile = $launcherFile
     }
 }
@@ -194,8 +207,20 @@ function Wait-CopilotAgents {
 
         foreach ($job in $completed) {
             $pending.Remove($job) | Out-Null
+            $job.Process.WaitForExit()
             $duration = (Get-Date) - $job.StartTime
-            $exitCode = $job.Process.ExitCode
+            
+            # Read exit code from file (more reliable than Process.ExitCode)
+            $exitCodeFile = "$($job.LogFile).exitcode"
+            $exitCode = $null
+            if (Test-Path $exitCodeFile) {
+                $raw = (Get-Content $exitCodeFile -Raw).Trim()
+                if ($raw -match '^\d+$') { $exitCode = [int]$raw }
+            }
+            if ($null -eq $exitCode) {
+                try { $exitCode = $job.Process.ExitCode } catch { $exitCode = -1 }
+            }
+            
             $ts = Get-Date -Format "HH:mm:ss"
             $status = if ($exitCode -eq 0) { "OK" } else { "FAIL (exit $exitCode)" }
             $color = if ($exitCode -eq 0) { "Green" } else { "Red" }
@@ -210,6 +235,7 @@ function Wait-CopilotAgents {
             # Clean up temp files
             Remove-Item $job.PromptFile -ErrorAction SilentlyContinue
             Remove-Item $job.LauncherFile -ErrorAction SilentlyContinue
+            Remove-Item "$($job.LogFile).exitcode" -ErrorAction SilentlyContinue
 
             $results += @{
                 ExitCode = $exitCode
