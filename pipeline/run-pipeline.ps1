@@ -28,6 +28,12 @@ $pipelineDir   = $PSScriptRoot
 $promptsDir    = Join-Path $pipelineDir "prompts"
 $logsDir       = Join-Path $pipelineDir "logs"
 $reportsDir    = Join-Path $pipelineDir "reports"
+
+# Ensure output directories exist
+@($promptsDir, $logsDir, $reportsDir) | ForEach-Object {
+    if (-not (Test-Path $_)) { New-Item -ItemType Directory -Path $_ -Force | Out-Null }
+}
+
 $mappingFile   = Join-Path $migrationRepo $config.paths.mappingFile
 $model         = $config.agent.model
 $agentFlags    = $config.agent.flags
@@ -840,6 +846,7 @@ function Invoke-Phase6 {
     Write-Host "╚═══════════════════════════════════════════╝" -ForegroundColor Magenta
 
     # Generate final report
+    if (-not (Test-Path $reportsDir)) { New-Item -ItemType Directory -Path $reportsDir -Force | Out-Null }
     $reportPath = Join-Path $reportsDir "pipeline-report.md"
     Write-TaskReport -TaskResults $TaskResults -Iter $Iter `
         -ValidationResult $ValidationResult -OutputPath $reportPath
