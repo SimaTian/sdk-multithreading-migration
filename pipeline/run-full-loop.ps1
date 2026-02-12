@@ -173,7 +173,7 @@ for ($i = $StartIteration; $i -le $MaxIterations; $i++) {
         }
 
         try {
-            $pipelineOutput = & $pipelineScript 2>&1 | Out-String
+            $pipelineOutput = & $pipelineScript -Iteration $i 2>&1 | Out-String
             $pipelineExit = $LASTEXITCODE
             Write-Status "Pipeline completed with exit code: $pipelineExit" $(if ($pipelineExit -eq 0) { 'Green' } else { 'Yellow' })
             Append-Summary "Pipeline exit code: $pipelineExit`n"
