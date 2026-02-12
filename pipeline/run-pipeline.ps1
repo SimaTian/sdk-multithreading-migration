@@ -707,14 +707,14 @@ Report PASS or FAIL as the last line of your output.
     $taskResults = @()
     for ($j = 0; $j -lt $tasks.Count; $j++) {
         $task = $tasks[$j]
-        $migResult = $migrateResults[$j]
-        $chkResult = $checkResults[$j]
+        $migExit = if ($j -lt $migrateResults.Count -and $null -ne $migrateResults[$j]) { $migrateResults[$j].ExitCode } else { -1 }
+        $chkExit = if ($j -lt $checkResults.Count -and $null -ne $checkResults[$j]) { $checkResults[$j].ExitCode } else { -1 }
         $taskResults += @{
             TaskName      = $task.disguised.className
             Category      = $task.disguised.category
             FilePath      = $task.disguised.file
-            MigrationExit = $migResult.ExitCode
-            CheckExit     = $chkResult.ExitCode
+            MigrationExit = $migExit
+            CheckExit     = $chkExit
         }
     }
 
