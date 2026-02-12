@@ -180,10 +180,10 @@ Write-Host "╚═════════════════════�
 Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Building..." -ForegroundColor Yellow
 $buildOutput = & dotnet build $testsProject --verbosity quiet 2>&1
 $buildExitCode = $LASTEXITCODE
+$buildErrors = @()
 
 if ($buildExitCode -ne 0) {
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] ⚠ Build has errors — these indicate structural mismatches" -ForegroundColor Yellow
-    $buildErrors = @()
     $seenErrors = @{}
     $buildOutput | ForEach-Object {
         $line = $_.ToString()
@@ -216,7 +216,6 @@ if (-not (Test-Path $logDir)) {
 
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $trxFile = "reference-$timestamp.trx"
-$buildErrors = if (-not $buildErrors) { @() } else { $buildErrors }
 
 if ($buildExitCode -ne 0) {
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] ⚠ Skipping test run — build failed" -ForegroundColor Yellow
