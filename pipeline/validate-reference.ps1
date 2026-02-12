@@ -1,6 +1,6 @@
-<#
+﻿<#
 .SYNOPSIS
-    Reference Test Validation — Outer Loop
+    Reference Test Validation - Outer Loop
 .DESCRIPTION
     Validates pipeline-migrated tasks against the trusted reference test suite.
     
@@ -58,7 +58,10 @@ if ($Branch -ne "") {
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Checking out branch '$Branch' in test-tasks repo..." -ForegroundColor Yellow
     Push-Location $testTasksRepo
     try {
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = 'SilentlyContinue'
         git checkout $Branch 2>&1 | Out-Null
+        $ErrorActionPreference = $prevEAP
         Write-Host "[$(Get-Date -Format 'HH:mm:ss')] On branch: $Branch" -ForegroundColor Green
     } finally {
         Pop-Location
@@ -130,7 +133,7 @@ foreach ($task in $tasks) {
 
     # Auto-detect all class names in both files and build a mapping.
     # The pipeline may rename auxiliary classes (base classes, helpers).
-    # We match them by order of declaration — both files should share structure.
+    # We match them by order of declaration - both files should share structure.
     $classPattern = '(?:public|internal|private|protected)(?:\s+(?:abstract|sealed|static|partial))*\s+class\s+(\w+)'
     $fixedClassNames = @([regex]::Matches((Get-Content $tgtPath -Raw), $classPattern) | ForEach-Object { $_.Groups[1].Value })
     $pipeClassNames  = @([regex]::Matches($content, $classPattern) | ForEach-Object { $_.Groups[1].Value })
@@ -183,7 +186,7 @@ $buildExitCode = $LASTEXITCODE
 $buildErrors = @()
 
 if ($buildExitCode -ne 0) {
-    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] ⚠ Build has errors — these indicate structural mismatches" -ForegroundColor Yellow
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] ⚠ Build has errors - these indicate structural mismatches" -ForegroundColor Yellow
     $seenErrors = @{}
     $buildOutput | ForEach-Object {
         $line = $_.ToString()
@@ -218,7 +221,7 @@ $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $trxFile = "reference-$timestamp.trx"
 
 if ($buildExitCode -ne 0) {
-    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] ⚠ Skipping test run — build failed" -ForegroundColor Yellow
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] ⚠ Skipping test run - build failed" -ForegroundColor Yellow
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Build errors count as validation failures" -ForegroundColor Yellow
     $testOutput = @()
     $testExitCode = 1
@@ -260,7 +263,7 @@ $totalIssues = $failed + $buildErrors.Count
 if ($totalIssues -eq 0 -and $passed -gt 0) {
     Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Green
     Write-Host "  ║  ✅ ALL FIXED REFERENCE TESTS PASSED             ║" -ForegroundColor Green
-    Write-Host "  ║  $passed/$total passed — Pipeline is VALIDATED    " -ForegroundColor Green
+    Write-Host "  ║  $passed/$total passed - Pipeline is VALIDATED    " -ForegroundColor Green
     Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Green
     Write-Host ""
     Write-Host "  The pipeline produces correct migrations." -ForegroundColor Green
@@ -275,7 +278,7 @@ if ($totalIssues -eq 0 -and $passed -gt 0) {
 
     if ($buildErrors.Count -gt 0) {
         Write-Host ""
-        Write-Host "  Build errors (structural mismatches — pipeline changed API shape):" -ForegroundColor Red
+        Write-Host "  Build errors (structural mismatches - pipeline changed API shape):" -ForegroundColor Red
         foreach ($err in $buildErrors) {
             # Extract the meaningful part
             if ($err -match '(error CS\d+:.+)$') {
@@ -342,7 +345,7 @@ $reportContent = @"
 - **Remapped**: $remapSuccess OK, $remapFail missing
 - **Build errors**: $($buildErrors.Count)
 - **Test results**: $passed/$total passed, $failed failed
-- **Verdict**: $(if ($totalIssues -eq 0 -and $passed -gt 0) { "✅ PASSED — Pipeline validated" } else { "❌ FAILED — Pipeline needs updates" })
+- **Verdict**: $(if ($totalIssues -eq 0 -and $passed -gt 0) { "✅ PASSED - Pipeline validated" } else { "❌ FAILED - Pipeline needs updates" })
 
 ## Build Errors
 $( if ($buildErrors.Count -eq 0) { "None" } else { ($buildErrors | ForEach-Object { "- ``$_``" }) -join "`n" })

@@ -1,6 +1,6 @@
-<#
+﻿<#
 .SYNOPSIS
-    Full Loop Runner — Pipeline + Reference Validation
+    Full Loop Runner - Pipeline + Reference Validation
 .DESCRIPTION
     Orchestrates the complete migration validation loop:
     1. Run the migration pipeline (run-pipeline.ps1)
@@ -31,6 +31,12 @@ $LogsDir = Join-Path $ScriptDir 'logs'
 $SkillsAmendmentsFile = Join-Path $ScriptDir 'skills-amendments.md'
 $SummaryFile = Join-Path $LogsDir 'full-loop-summary.md'
 
+# Load config to find test-tasks repo
+$configPath = Join-Path $ScriptDir 'config.json'
+$config = Get-Content $configPath -Raw | ConvertFrom-Json
+$workspaceRoot = Split-Path (Split-Path $ScriptDir -Parent) -Parent
+$testTasksRepo = Join-Path $workspaceRoot $config.testTasksRepo.localPath
+
 # Ensure logs directory exists
 if (-not (Test-Path $LogsDir)) {
     New-Item -ItemType Directory -Path $LogsDir -Force | Out-Null
@@ -58,9 +64,15 @@ function Append-Summary {
 # ------------------------------------------------------------------
 function Test-BranchExists {
     param([string]$Branch)
-    $local = git branch --list $Branch 2>$null
-    $remote = git branch -r --list "origin/$Branch" 2>$null
-    return ($local -or $remote)
+    Push-Location $testTasksRepo
+    try {
+        git fetch origin --quiet 2>$null
+        $local = git branch --list $Branch 2>$null
+        $remote = git branch -r --list "origin/$Branch" 2>$null
+        return [bool]($local -or $remote)
+    } finally {
+        Pop-Location
+    }
 }
 
 # ------------------------------------------------------------------
@@ -75,7 +87,7 @@ function New-SkillsAmendment {
     $amendmentFile = Join-Path $ScriptDir "skills-update-$Iteration.md"
 
     $content = @"
-# Skills Amendment — Iteration $Iteration
+# Skills Amendment - Iteration $Iteration
 Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
 
 ## Reference Validation Failures
@@ -94,7 +106,7 @@ $ValidationOutput
 3. Verify that all path-producing Output properties resolve relative to ProjectDirectory, not CWD.
 4. Ensure log messages do not contain CWD-based paths.
 5. Use the reflection-based MigrationTestHarness to validate output path resolution generically.
-6. Do NOT add attribute/interface-only tests — focus on behavioral correctness.
+6. Do NOT add attribute/interface-only tests - focus on behavioral correctness.
 "@
 
     Set-Content -Path $amendmentFile -Value $content -Encoding UTF8
@@ -129,7 +141,7 @@ Skip Pipeline: $SkipPipeline
 Set-Content -Path $SummaryFile -Value $summaryHeader -Encoding UTF8
 
 Write-Status "========================================" 'White'
-Write-Status "  Full Loop Runner — Pipeline + Validation" 'White'
+Write-Status "  Full Loop Runner - Pipeline + Validation" 'White'
 Write-Status "  Max Iterations: $MaxIterations" 'White'
 Write-Status "  Starting at: $StartIteration" 'White'
 Write-Status "  Branch pattern: $PipelineBranch-N" 'White'
@@ -178,7 +190,7 @@ for ($i = $StartIteration; $i -le $MaxIterations; $i++) {
         }
     } else {
         Write-Status "Phase 1: SKIPPED (SkipPipeline flag set)" 'Yellow'
-        Append-Summary "### Phase 1: Pipeline Execution — SKIPPED`n"
+        Append-Summary "### Phase 1: Pipeline Execution - SKIPPED`n"
     }
 
     # ------------------------------------------------------------------
@@ -190,7 +202,7 @@ for ($i = $StartIteration; $i -le $MaxIterations; $i++) {
         Write-Status "Branch '$branchName' does not exist." 'Yellow'
         Write-Status "  The pipeline should create branch: $branchName" 'Yellow'
         Write-Status "  If running manually, create this branch with your migration changes and re-run." 'Yellow'
-        Append-Summary "**Branch not found**: $branchName — waiting for pipeline output.`n"
+        Append-Summary "**Branch not found**: $branchName - waiting for pipeline output.`n"
         Append-Summary "### Action Required`nCreate branch ``$branchName`` with migration changes, then re-run with ``-StartIteration $i``.`n"
         $finalVerdict = 'WAITING_FOR_BRANCH'
         break
@@ -214,8 +226,11 @@ for ($i = $StartIteration; $i -le $MaxIterations; $i++) {
     }
 
     try {
-        $validationOutput = & $validateScript -Branch $branchName 2>&1 | Out-String
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $validationOutput = & powershell -NoProfile -ExecutionPolicy Bypass -File $validateScript -Branch $branchName 2>&1 | Out-String
         $validationExit = $LASTEXITCODE
+        $ErrorActionPreference = $prevEAP
 
         # Save validation log
         $validationLogFile = Join-Path $LogsDir "validation-iteration-$i.log"
@@ -232,15 +247,15 @@ for ($i = $StartIteration; $i -le $MaxIterations; $i++) {
     # Phase 4: Evaluate Results
     # ------------------------------------------------------------------
     if ($validationExit -eq 0) {
-        Write-Status "PASS — Reference validation succeeded on iteration $i!" 'Green'
-        Append-Summary "**RESULT: PASS** — All reference tests passed.`n"
+        Write-Status "PASS - Reference validation succeeded on iteration $i!" 'Green'
+        Append-Summary "**RESULT: PASS** - All reference tests passed.`n"
         Append-Summary "Validation log: $validationLogFile`n"
         $finalVerdict = 'PASS'
         $passedIteration = $i
         break
     } else {
-        Write-Status "FAIL — Reference validation failed on iteration $i." 'Red'
-        Append-Summary "**RESULT: FAIL** — Reference validation detected failures.`n"
+        Write-Status "FAIL - Reference validation failed on iteration $i." 'Red'
+        Append-Summary "**RESULT: FAIL** - Reference validation detected failures.`n"
         Append-Summary "Validation log: $validationLogFile`n"
 
         # Generate skills amendment for next iteration
@@ -285,15 +300,16 @@ if ($passedIteration) {
 Write-Status "  Summary log: $SummaryFile" 'White'
 Write-Status "========================================" 'White'
 
-Append-Summary @"
+$finalSummary = @"
 
 ---
 
 ## Final Verdict
-- **Result**: $finalVerdict
-- **Passed Iteration**: $(if ($passedIteration) { $passedIteration } else { 'N/A' })
-- **Completed**: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+- Result: $finalVerdict
+- Passed Iteration: $(if ($passedIteration) { $passedIteration } else { 'N/A' })
+- Completed: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
 "@
+Append-Summary $finalSummary
 
 # Return appropriate exit code
 if ($finalVerdict -eq 'PASS') {
