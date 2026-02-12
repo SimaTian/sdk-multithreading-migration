@@ -61,6 +61,22 @@ Replace forbidden APIs **directly** — do NOT null-check `TaskEnvironment`. MSB
 - `new FileStream(path, ...)` → absolutize `path` first
 - `XDocument.Load(path)` / `.Save(path)` → absolutize `path` first
 
+**CRITICAL: Always add defensive ProjectDirectory initialization at the start of Execute/ExecuteCore:**
+```csharp
+// Add this BEFORE any path resolution in Execute()/ExecuteCore():
+if (string.IsNullOrEmpty(TaskEnvironment.ProjectDirectory) && BuildEngine != null)
+{
+    string projectFile = BuildEngine.ProjectFileOfTaskNode;
+    if (!string.IsNullOrEmpty(projectFile))
+    {
+        TaskEnvironment.ProjectDirectory =
+            Path.GetDirectoryName(Path.GetFullPath(projectFile)) ?? string.Empty;
+    }
+}
+```
+
+**Why**: When `TaskEnvironment.ProjectDirectory` is empty (its default), `TaskEnvironment.GetAbsolutePath(relativePath)` returns `Path.Combine("", relativePath)` which is just `relativePath` — still relative. File operations then resolve against the process CWD, breaking thread safety. Auto-initializing from `BuildEngine.ProjectFileOfTaskNode` (which is always an absolute path in real MSBuild) ensures correct project-relative resolution. Tests that don't explicitly set `TaskEnvironment` depend on this fallback.
+
 Store absolutized path in a local variable for reuse:
 ```csharp
 AbsolutePath absPath = TaskEnvironment.GetAbsolutePath(inputPath);
@@ -100,3 +116,78 @@ These types exist in `src/Tasks/Common/` (gated `#if NETFRAMEWORK`) and from the
 In test project:
 - `TaskEnvironmentHelper.CreateForTest()` — creates TaskEnvironment with CWD as project dir
 - `TaskEnvironmentHelper.CreateForTest(string projectDirectory)` — creates TaskEnvironment with specified project dir
+
+## Complete Migration Example: Path.GetFullPath Replacement
+
+### Before (unsafe):
+```csharp
+[MSBuildMultiThreadableTask]
+public class PathNormalizer : Microsoft.Build.Utilities.Task
+{
+    public string InputPath { get; set; } = string.Empty;
+
+    public override bool Execute()
+    {
+        if (string.IsNullOrEmpty(InputPath))
+        {
+            Log.LogError("InputPath is required.");
+            return false;
+        }
+        // VIOLATION: Path.GetFullPath resolves relative to process CWD
+        string resolvedPath = Path.GetFullPath(InputPath);
+        Log.LogMessage(MessageImportance.Normal, $"Resolved path: {resolvedPath}");
+        if (File.Exists(resolvedPath))
+            Log.LogMessage(MessageImportance.Normal, $"File found at '{resolvedPath}'.");
+        else
+            Log.LogMessage(MessageImportance.Normal, $"File not found at '{resolvedPath}'.");
+        return true;
+    }
+}
+```
+
+### After (correct migration):
+```csharp
+[MSBuildMultiThreadableTask]
+public class PathNormalizer : Microsoft.Build.Utilities.Task, IMultiThreadableTask
+{
+    public TaskEnvironment TaskEnvironment { get; set; } = new();
+    public string InputPath { get; set; } = string.Empty;
+
+    public override bool Execute()
+    {
+        if (string.IsNullOrEmpty(InputPath))
+        {
+            Log.LogError("InputPath is required.");
+            return false;
+        }
+
+        // CRITICAL: Auto-initialize ProjectDirectory from BuildEngine when not set
+        if (string.IsNullOrEmpty(TaskEnvironment.ProjectDirectory) && BuildEngine != null)
+        {
+            string projectFile = BuildEngine.ProjectFileOfTaskNode;
+            if (!string.IsNullOrEmpty(projectFile))
+            {
+                TaskEnvironment.ProjectDirectory =
+                    Path.GetDirectoryName(Path.GetFullPath(projectFile)) ?? string.Empty;
+            }
+        }
+
+        // FIXED: Use TaskEnvironment.GetAbsolutePath instead of Path.GetFullPath
+        string resolvedPath = TaskEnvironment.GetAbsolutePath(InputPath);
+        Log.LogMessage(MessageImportance.Normal, $"Resolved path: {resolvedPath}");
+        if (File.Exists(resolvedPath))
+            Log.LogMessage(MessageImportance.Normal, $"File found at '{resolvedPath}'.");
+        else
+            Log.LogMessage(MessageImportance.Normal, $"File not found at '{resolvedPath}'.");
+        return true;
+    }
+}
+```
+
+### Key differences:
+1. Added `IMultiThreadableTask` interface
+2. Added `TaskEnvironment` property with default initializer
+3. Added `ProjectDirectory` auto-initialization from `BuildEngine.ProjectFileOfTaskNode` — **this is the commonly missed step**
+4. Replaced `Path.GetFullPath(InputPath)` → `TaskEnvironment.GetAbsolutePath(InputPath)`
+
+**Common mistake**: Replacing `Path.GetFullPath` with `TaskEnvironment.GetAbsolutePath` WITHOUT adding the `ProjectDirectory` auto-initialization. When `ProjectDirectory` is empty (default), `GetAbsolutePath` effectively returns the path unchanged, making the migration a no-op that still resolves against CWD.
