@@ -1,5 +1,5 @@
 ﻿# Skills Amendment - Iteration 2
-Generated: 2026-02-12 13:05:05
+Generated: 2026-02-12 19:59:09
 
 ## Reference Validation Failures
 
@@ -13,56 +13,43 @@ Address these issues in the next pipeline run.
   Tasks: 46 | Mapping: C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\pipeline-test-mapping.json
 ═══════════════════════════════════════════════════════════
 
-[13:05:01] Checking out branch 'pipeline-migration-iteration-2' in test-tasks repo...
-[13:05:01] On branch: pipeline-migration-iteration-2
+[19:58:59] Checking out branch 'pipeline-migration-iteration-2' in test-tasks repo...
+[19:58:59] On branch: pipeline-migration-iteration-2
 
 ╔═══════════════════════════════════════════╗
 ║  Step 1: Backup Fixed Task Sources        ║
 ╚═══════════════════════════════════════════╝
-[13:05:01] Backed up 52 Fixed task source files
+[19:58:59] Backed up 52 Fixed task source files
 
 ╔═══════════════════════════════════════════╗
 ║  Step 2: Remap Pipeline Output  Fixed    ║
 ╚═══════════════════════════════════════════╝
-[13:05:02] Remapped: 46 OK, 0 missing
+[19:59:01] Remapped: 46 OK, 0 missing
 
 ╔═══════════════════════════════════════════╗
 ║  Step 3: Build Reference Test Suite       ║
 ╚═══════════════════════════════════════════╝
-[13:05:02] Building...
-[13:05:05] ? Build has errors - these indicate structural mismatches
-  C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks.Tests\ConsoleViolationTests.cs(113,17): error CS0117: 'UsesConsoleReadLine' does not contain a definition for 'DefaultInput' [C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks.Tests\UnsafeThreadSafeTasks.Tests.csproj]
-[13:05:05] Build errors will count as validation failures
-
+[19:59:01] Building...
+[19:59:05] ? Build succeeded
 
 ╔═══════════════════════════════════════════╗
 ║  Step 4: Run Fixed Reference Tests        ║
 ╚═══════════════════════════════════════════╝
-[13:05:05] ? Skipping test run - build failed
-[13:05:05] Build errors count as validation failures
-
-╔═══════════════════════════════════════════╗
-║  Step 5: Results                          ║
-╚═══════════════════════════════════════════╝
-
-  ╔══════════════════════════════════════════════════╗
-  ║  ? REFERENCE VALIDATION FAILED                  ║
-  ║  0 passed, 0 test failures, 1 build errors 
-  ╚══════════════════════════════════════════════════╝
-
-  Pipeline needs skill/flow updates before re-run.
-
-  Build errors (structural mismatches - pipeline changed API shape):
-    ?? error CS0117: 'UsesConsoleReadLine' does not contain a definition for 'DefaultInput' [C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\UnsafeThreadSafeTasks.Tests\UnsafeThreadSafeTasks.Tests.csproj]
-        Pipeline task: SdkTasks.Diagnostics.UserInputPrompt
-
-[13:05:05] Restoring original Fixed tasks...
-[13:05:05] Restored.
-[13:05:05] Report: C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\pipeline\logs\reference-validation\reference-20260212-130505.md
-
-═══════════════════════════════════════════════════════════
-  Reference Validation Complete
-═══════════════════════════════════════════════════════════
+[19:59:05] Running Fixed tests (filter: _Fixed|_FixedTask)...
+powershell.exe : dotnet.exe : [xUnit.net 00:00:01.06]     
+At C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\pipeline\run-full-loop.ps1:231 char:29
++ ... ionOutput = & powershell -NoProfile -ExecutionPolicy Bypass -File $va ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (dotnet.exe : [x...:00:01.06]     :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+UnsafeThreadSafeTasks.Tests.ConsoleViolationTests.UsesConsoleReadLine_FixedTask_ShouldReadFromProperty [FAIL]
+At C:\Users\tbartonek\agent-workspace\sdk-multithreading-migration\pipeline\validate-reference.ps1:231 char:19
++     $testOutput = & dotnet test $testsProject `
++                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([xUnit.net 00:0...Property [FAIL]:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
 
 ```
 
