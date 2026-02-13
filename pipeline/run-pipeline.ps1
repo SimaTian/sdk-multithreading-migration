@@ -273,7 +273,7 @@ function Invoke-WorkerPool {
             if ($null -eq $task) { break }
 
             $params = & $PromptBuilder $task
-            $modelOvr = if ($params.ModelOverride) { $params.ModelOverride } else { "" }
+            $modelOvr = if ($params.ContainsKey('ModelOverride') -and $params.ModelOverride) { $params.ModelOverride } else { "" }
             $job = Invoke-CopilotAgentAsync -Prompt $params.Prompt -WorkingDir $params.WorkingDir `
                 -LogFile $params.LogFile -Label $params.Label -ExtraDirs $params.ExtraDirs `
                 -ModelOverride $modelOvr
