@@ -172,23 +172,21 @@ function Invoke-CopilotAgentAsync {
     $effectiveModel = if ($ModelOverride) { $ModelOverride } else { $model }
 
     # Write a launcher script that captures exit code to a file
-    # NOTE: No PowerShell or Start-Process redirects — node.exe fails with StandardOutputEncoding
-    # when any stdout redirect is in the process tree. Use cmd.exe to redirect instead.
+    # NOTE: Do NOT redirect stdout/stderr — node.exe crashes with StandardOutputEncoding error
+    # when ANY redirect is in the process tree. The --share flag saves agent output to LogFile.
     $launcherFile = "$LogFile.launcher.cmd"
     $exitCodeFile = "$LogFile.exitcode"
-    $stdoutFile = "$LogFile.stdout"
-    $stderrFile = "$LogFile.stderr"
     @"
 @echo off
 cd /d "$WorkingDir"
-pwsh -NoProfile -Command "`$p = Get-Content '$promptFile' -Raw; & copilot -p `$p $agentFlags --model $effectiveModel $addDirArgs --share '$LogFile'" > "$stdoutFile" 2> "$stderrFile"
+pwsh -NoProfile -Command "`$p = Get-Content '$promptFile' -Raw; & copilot -p `$p $agentFlags --model $effectiveModel $addDirArgs --share '$LogFile'"
 echo %ERRORLEVEL% > "$exitCodeFile"
 exit /b %ERRORLEVEL%
 "@ | Set-Content $launcherFile -Encoding ASCII
 
     $startTime = Get-Date
     $proc = Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", $launcherFile) `
-        -NoNewWindow -PassThru
+        -WindowStyle Hidden -PassThru
     
     return @{
         Process      = $proc
@@ -217,16 +215,18 @@ function Complete-AgentJob {
         try { $exitCode = $Job.Process.ExitCode } catch { $exitCode = -1 }
     }
 
-    # Capture stdout
+    # Capture agent output from share log
     $stdout = ""
-    if (Test-Path "$($Job.LogFile).stdout") {
-        $stdout = Get-Content "$($Job.LogFile).stdout" -Raw -ErrorAction SilentlyContinue
+    if (Test-Path $Job.LogFile) {
+        $stdout = Get-Content $Job.LogFile -Raw -ErrorAction SilentlyContinue
     }
 
     # Clean up temp files
     Remove-Item $Job.PromptFile -ErrorAction SilentlyContinue
     Remove-Item $Job.LauncherFile -ErrorAction SilentlyContinue
     Remove-Item $exitCodeFile -ErrorAction SilentlyContinue
+    Remove-Item "$($Job.LogFile).stdout" -ErrorAction SilentlyContinue
+    Remove-Item "$($Job.LogFile).stderr" -ErrorAction SilentlyContinue
 
     return @{
         ExitCode = $exitCode
