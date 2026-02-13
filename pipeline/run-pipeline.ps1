@@ -289,7 +289,7 @@ function Invoke-WorkerPool {
     return @($results | Sort-Object { $_.Index })
 }
 
-$script:Parallelism = 5
+$script:Parallelism = 10
 
 function Parse-TestResults {
     param([string]$TrxPath)
@@ -399,9 +399,15 @@ function Invoke-Phase1 {
     $skillFiles = (Get-ChildItem "$testTasksRepo\skills\*.md" | ForEach-Object { $_.Name }) -join ", "
     $iterLogDir = Get-IterationLogDir $Iter
 
+    # Preload skills content so agents don't each read the same files
+    $skillsContent = ""
+    foreach ($sf in (Get-ChildItem "$testTasksRepo\skills\*.md")) {
+        $skillsContent += "=== $($sf.Name) ===`n$(Get-Content $sf.FullName -Raw)`n`n"
+    }
+
     # Closure variables for the prompt builder
     $p1AmendmentsContent = $amendmentsContent
-    $p1SkillFiles = $skillFiles
+    $p1SkillsContent = $skillsContent
     $p1IterLogDir = $iterLogDir
 
     $promptBuilder = {
@@ -412,14 +418,16 @@ function Invoke-Phase1 {
 You are a migration planning agent. Analyze ONE MSBuild task and produce a migration prompt.
 
 WORKSPACE: $testTasksRepo
-SKILLS DOCS: Read ALL files in skills/ directory ($p1SkillFiles)
-TASK: $cn at $fp
+TASK: $cn at src/SdkTasks/$fp
 
 $(if ($p1AmendmentsContent) { "IMPORTANT - LESSONS FROM PREVIOUS ITERATIONS:`n$p1AmendmentsContent`n" })
+SKILLS REFERENCE (already loaded - do NOT re-read skills/ files):
+$p1SkillsContent
+
 Steps:
 1. Read the task source code at src/SdkTasks/$fp completely
 2. Identify all forbidden API usages (Path.GetFullPath, File.*/Directory.* with relative paths, Environment.GetEnvironmentVariable, Environment.SetEnvironmentVariable, Environment.CurrentDirectory, Console.*, new ProcessStartInfo, Environment.Exit, Environment.FailFast, Process.Kill)
-3. Determine migration strategy (attribute-only vs interface-based per the skills docs)
+3. Determine migration strategy (attribute-only vs interface-based per the skills above)
 4. Write a migration prompt file to: $promptsDir\$cn.md
 
 The prompt file must contain:
@@ -427,7 +435,6 @@ The prompt file must contain:
 - List of forbidden APIs found with line numbers
 - Migration strategy (attribute-only or interface-based)
 - Specific code changes needed (which API calls to replace with which TaskEnvironment methods)
-- TDD steps: what test to write, expected fail reason, how to fix
 - ALL public properties that must be preserved on the migrated task
 "@
         return @{
@@ -435,7 +442,7 @@ The prompt file must contain:
             LogFile   = Join-Path $p1IterLogDir "phase1-$cn.log"
             Label     = "P1:$cn"
             WorkingDir = $testTasksRepo
-            ExtraDirs  = @($migrationRepo)
+            ExtraDirs  = @()
         }
     }
 
@@ -612,6 +619,13 @@ function Invoke-Phase3 {
     $p3IterLogDir = Get-IterationLogDir $Iter
     $p3AmendmentsContent = $amendmentsContent
 
+    # Preload skills content for migration agents
+    $skillsContent = ""
+    foreach ($sf in (Get-ChildItem "$testTasksRepo\skills\*.md" -ErrorAction SilentlyContinue)) {
+        $skillsContent += "=== $($sf.Name) ===`n$(Get-Content $sf.FullName -Raw)`n`n"
+    }
+    $p3SkillsContent = $skillsContent
+
     # Phase 3a: Migrate all tasks via worker pool
     Write-Host "  Phase 3a: Migrating tasks..." -ForegroundColor Yellow
     $migratePromptBuilder = {
@@ -632,7 +646,9 @@ You are a migration agent. Migrate this MSBuild task to be properly thread-safe.
 
 TASK FILE: $fullPath
 CATEGORY: $cat
-SKILLS: Read the skills docs in $testTasksRepo\skills\ for migration patterns.
+
+SKILLS REFERENCE (already loaded - do NOT re-read skills/ files):
+$p3SkillsContent
 
 $(if ($promptContent) { "MIGRATION GUIDANCE:`n$promptContent" } else { "Analyze the task for forbidden API usage and apply the interface-migration-template pattern." })
 
@@ -664,7 +680,7 @@ Do NOT run tests. Do NOT run the full test suite. Only build to verify compilati
             LogFile    = Join-Path $p3IterLogDir "migrate-$cn.log"
             Label      = "Mig:$cn"
             WorkingDir = $testTasksRepo
-            ExtraDirs  = @($migrationRepo)
+            ExtraDirs  = @()
         }
     }
 
