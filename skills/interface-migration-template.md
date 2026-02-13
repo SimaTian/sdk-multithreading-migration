@@ -56,7 +56,9 @@ public class TheTask : TaskBase, IMultiThreadableTask
 ```
 
 Replace forbidden APIs **directly** — do NOT null-check `TaskEnvironment`. MSBuild always provides a `TaskEnvironment` instance to `IMultiThreadableTask` implementations, even in single-threaded mode (where it acts as a no-op passthrough):
-- `Path.GetFullPath(x)` → `TaskEnvironment.GetAbsolutePath(x)` (add `.GetCanonicalForm()` if canonicalization was the intent)
+- `Path.GetFullPath(x)` used to make paths absolute → `TaskEnvironment.GetAbsolutePath(x)`
+- `Path.GetFullPath(x)` used to canonicalize/normalize paths (resolve `..`, normalize separators) → `TaskEnvironment.GetCanonicalForm(x)`
+- **CRITICAL**: If you are unsure whether `Path.GetFullPath` was for absolutization or canonicalization, use `TaskEnvironment.GetCanonicalForm(x)` — it does both (absolutizes AND normalizes). Look at variable names like `canonicalPath`, `normalizedPath`, log messages containing "canonical", and whether inputs contain `..` segments.
 - `File.Exists(relativePath)` → `File.Exists(TaskEnvironment.GetAbsolutePath(relativePath))`
 - `new FileStream(path, ...)` → absolutize `path` first
 - `XDocument.Load(path)` / `.Save(path)` → absolutize `path` first
@@ -197,3 +199,77 @@ public class PathNormalizer : Microsoft.Build.Utilities.Task, IMultiThreadableTa
 4. Replaced `Path.GetFullPath(InputPath)` → `TaskEnvironment.GetAbsolutePath(InputPath)`
 
 **Common mistake**: Replacing `Path.GetFullPath` with `TaskEnvironment.GetAbsolutePath` WITHOUT adding the `ProjectDirectory` auto-initialization. When `ProjectDirectory` is empty (default), `GetAbsolutePath` effectively returns the path unchanged, making the migration a no-op that still resolves against CWD.
+
+## Complete Migration Example: Path.GetFullPath for Canonicalization
+
+This is the most commonly failed migration pattern. When `Path.GetFullPath()` is used to **canonicalize** paths (resolve `..` segments, normalize separators), you MUST use `TaskEnvironment.GetCanonicalForm()` — NOT `GetAbsolutePath()`.
+
+### Before (unsafe — uses Path.GetFullPath for canonicalization):
+```csharp
+[MSBuildMultiThreadableTask]
+public class PathCanonicalizationTask : Microsoft.Build.Utilities.Task
+{
+    public string InputPath { get; set; } = string.Empty;
+
+    public override bool Execute()
+    {
+        if (string.IsNullOrEmpty(InputPath))
+        {
+            Log.LogError("InputPath is required.");
+            return false;
+        }
+        // VIOLATION: Path.GetFullPath resolves relative to process CWD
+        // and is used here specifically for canonicalization (resolving ".." etc.)
+        string canonicalPath = Path.GetFullPath(InputPath);
+        Log.LogMessage(MessageImportance.Normal, $"Canonical path: {canonicalPath}");
+        if (File.Exists(canonicalPath))
+        {
+            string content = File.ReadAllText(canonicalPath);
+            Log.LogMessage(MessageImportance.Normal, $"Read {content.Length} characters from '{canonicalPath}'.");
+        }
+        return true;
+    }
+}
+```
+
+### After (correct migration using GetCanonicalForm):
+```csharp
+[MSBuildMultiThreadableTask]
+public class PathCanonicalizationTask : Microsoft.Build.Utilities.Task, IMultiThreadableTask
+{
+    public TaskEnvironment TaskEnvironment { get; set; } = new();
+    public string InputPath { get; set; } = string.Empty;
+
+    public override bool Execute()
+    {
+        if (string.IsNullOrEmpty(InputPath))
+        {
+            Log.LogError("InputPath is required.");
+            return false;
+        }
+
+        // FIXED: Use TaskEnvironment.GetCanonicalForm instead of Path.GetFullPath
+        // GetCanonicalForm resolves relative to ProjectDirectory AND normalizes ".." segments
+        string canonicalPath = TaskEnvironment.GetCanonicalForm(InputPath);
+        Log.LogMessage(MessageImportance.Normal, $"Canonical path: {canonicalPath}");
+        if (File.Exists(canonicalPath))
+        {
+            string content = File.ReadAllText(canonicalPath);
+            Log.LogMessage(MessageImportance.Normal, $"Read {content.Length} characters from '{canonicalPath}'.");
+        }
+        return true;
+    }
+}
+```
+
+### Key differences from the absolutization example:
+1. `Path.GetFullPath(InputPath)` → `TaskEnvironment.GetCanonicalForm(InputPath)` (NOT `GetAbsolutePath`)
+2. No separate `ProjectDirectory` auto-initialization is needed — `GetCanonicalForm()` calls `GetAbsolutePath()` internally, which uses `ProjectDirectory`
+3. The variable name `canonicalPath` is a strong signal that `GetCanonicalForm()` is the correct replacement
+
+### How to recognize this pattern:
+- Variable named `canonicalPath`, `normalizedPath`, `fullPath`, `resolvedPath`
+- Log message says "Canonical path:", "Normalized:", "Full path:"
+- Task name contains "Canonical", "Canonicalize", "Normalize", "FullPath"
+- Input may contain `..` or mixed path separators
+- **If you see `Path.GetFullPath()` in the Execute() body, it MUST be replaced — do not leave it behind after adding the interface/attribute**

@@ -85,8 +85,7 @@ function Invoke-CopilotAgent {
     $exitCodeFile = "$LogFile.exitcode"
     @"
 Set-Location "$WorkingDir"
-`$p = Get-Content "$promptFile" -Raw
-& copilot -p `$p $agentFlags --model $model $addDirArgs --share "$LogFile" *> "$LogFile.stdout"
+& copilot -p "Read the file at '$promptFile' for your complete task instructions and execute them exactly." $agentFlags --model $model $addDirArgs --share "$LogFile" *> "$LogFile.stdout"
 `$LASTEXITCODE | Set-Content "$exitCodeFile" -NoNewline
 exit `$LASTEXITCODE
 "@ | Set-Content $launcherFile -Encoding UTF8
@@ -96,15 +95,22 @@ exit `$LASTEXITCODE
         -NoNewWindow -Wait -PassThru
     $duration = (Get-Date) - $startTime
 
-    # Read exit code from file (more reliable than Process.ExitCode)
+    # Determine exit code: prefer Process.ExitCode, fall back to exit-code file
     $exitCode = $null
-    if (Test-Path $exitCodeFile) {
+    try { $exitCode = $proc.ExitCode } catch { }
+    if ($null -eq $exitCode -and (Test-Path $exitCodeFile)) {
         $raw = (Get-Content $exitCodeFile -Raw).Trim()
         if ($raw -match '^\d+$') { $exitCode = [int]$raw }
-        Remove-Item $exitCodeFile -ErrorAction SilentlyContinue
     }
-    if ($null -eq $exitCode) {
-        try { $exitCode = $proc.ExitCode } catch { $exitCode = -1 }
+    if ($null -eq $exitCode) { $exitCode = -1 }
+    Remove-Item $exitCodeFile -ErrorAction SilentlyContinue
+    # The share log (--share) is the authoritative success signal:
+    # - Present → copilot completed its session (override polluted exit codes to 0)
+    # - Absent  → copilot never ran or crashed (force exit code to 1)
+    if (Test-Path $LogFile) {
+        $exitCode = 0
+    } else {
+        if ($exitCode -eq 0) { $exitCode = 1 }
     }
     $ts = Get-Date -Format "HH:mm:ss"
     $status = if ($exitCode -eq 0) { "OK" } else { "FAIL (exit $exitCode)" }
@@ -178,8 +184,7 @@ function Invoke-CopilotAgentAsync {
     $exitCodeFile = "$LogFile.exitcode"
     @"
 Set-Location '$WorkingDir'
-`$p = Get-Content '$promptFile' -Raw
-& copilot -p `$p $agentFlags --model $effectiveModel $addDirArgs --share '$LogFile'
+& copilot -p "Read the file at '$promptFile' for your complete task instructions and execute them exactly." $agentFlags --model $effectiveModel $addDirArgs --share '$LogFile' *> '$LogFile.stdout'
 `$LASTEXITCODE | Set-Content '$exitCodeFile' -NoNewline
 "@ | Set-Content $launcherFile -Encoding UTF8
 
@@ -203,15 +208,22 @@ function Complete-AgentJob {
     $Job.Process.WaitForExit()
     $duration = (Get-Date) - $Job.StartTime
 
-    # Read exit code from file (more reliable than Process.ExitCode)
+    # Determine exit code: prefer Process.ExitCode, fall back to exit-code file
     $exitCodeFile = "$($Job.LogFile).exitcode"
     $exitCode = $null
-    if (Test-Path $exitCodeFile) {
+    try { $exitCode = $Job.Process.ExitCode } catch { }
+    if ($null -eq $exitCode -and (Test-Path $exitCodeFile)) {
         $raw = (Get-Content $exitCodeFile -Raw).Trim()
         if ($raw -match '^\d+$') { $exitCode = [int]$raw }
     }
-    if ($null -eq $exitCode) {
-        try { $exitCode = $Job.Process.ExitCode } catch { $exitCode = -1 }
+    if ($null -eq $exitCode) { $exitCode = -1 }
+    # The share log (--share) is the authoritative success signal:
+    # - Present → copilot completed its session (override polluted exit codes to 0)
+    # - Absent  → copilot never ran or crashed (force exit code to 1)
+    if (Test-Path $Job.LogFile) {
+        $exitCode = 0
+    } else {
+        if ($exitCode -eq 0) { $exitCode = 1 }
     }
 
     # Capture agent output from share log
@@ -263,6 +275,8 @@ function Invoke-WorkerPool {
 
     while ($queueIndex -lt $total -or $running.Count -gt 0 -or $retryQueue.Count -gt 0) {
         # Fill empty worker slots — retries first, then fresh tasks
+        # Stagger launches to avoid API rate limits (429)
+        $launchedThisRound = 0
         while ($running.Count -lt $Workers -and ($retryQueue.Count -gt 0 -or $queueIndex -lt $total)) {
             $task = $null
             $isRetry = $false
@@ -275,6 +289,9 @@ function Invoke-WorkerPool {
             }
             if ($null -eq $task) { break }
 
+            # Stagger: wait 3s between each launch to avoid 429 rate limits
+            if ($launchedThisRound -gt 0) { Start-Sleep -Seconds 3 }
+
             $params = & $PromptBuilder $task
             $modelOvr = if ($params.ContainsKey('ModelOverride') -and $params.ModelOverride) { $params.ModelOverride } else { "" }
             $job = Invoke-CopilotAgentAsync -Prompt $params.Prompt -WorkingDir $params.WorkingDir `
@@ -283,6 +300,7 @@ function Invoke-WorkerPool {
             $job.TaskData = $task
             $job.Index = if ($isRetry) { $task._OrigIndex } else { $queueIndex }
             $running.Add($job) | Out-Null
+            $launchedThisRound++
 
             $retryTag = if ($isRetry) { " (retry $($retryCounts[$params.Label]))" } else { "" }
             Write-Host "  [$(Get-Date -Format 'HH:mm:ss')] Started [$($job.Index)/$total] $($params.Label)$retryTag" -ForegroundColor DarkGray
@@ -328,7 +346,7 @@ function Invoke-WorkerPool {
     return @($results | Sort-Object { $_.Index })
 }
 
-$script:Parallelism = 25
+$script:Parallelism = 15
 
 function Parse-TestResults {
     param([string]$TrxPath)
@@ -448,11 +466,16 @@ function Invoke-Phase1 {
     $p1AmendmentsContent = $amendmentsContent
     $p1SkillsContent = $skillsContent
     $p1IterLogDir = $iterLogDir
+    # Rotate through models to spread API load
+    $p1Models = @("claude-opus-4.6", "gemini-3-pro-preview", "gpt-5.2-codex")
+    $script:p1ModelIndex = 0
 
     $promptBuilder = {
         param($t)
         $cn = $t.disguised.className
         $fp = $t.disguised.file
+        $selectedModel = $p1Models[$script:p1ModelIndex % $p1Models.Count]
+        $script:p1ModelIndex++
         $p = @"
 You are a migration planning agent. Analyze ONE MSBuild task and produce a migration prompt.
 
@@ -477,11 +500,12 @@ The prompt file must contain:
 - ALL public properties that must be preserved on the migrated task
 "@
         return @{
-            Prompt    = $p
-            LogFile   = Join-Path $p1IterLogDir "phase1-$cn.log"
-            Label     = "P1:$cn"
-            WorkingDir = $testTasksRepo
-            ExtraDirs  = @()
+            Prompt        = $p
+            LogFile       = Join-Path $p1IterLogDir "phase1-$cn.log"
+            Label         = "P1:$cn"
+            WorkingDir    = $testTasksRepo
+            ExtraDirs     = @()
+            ModelOverride = $selectedModel
         }
     }
 
@@ -669,18 +693,16 @@ function Invoke-Phase3 {
     $p3SkillsContent = $skillsContent
 
     # Phase 3a: Multi-model ensemble migration
-    # For each task, spawn 13 agents in parallel (1 opus, 1 gemini, 1 gpt-codex, 10 sonnet)
-    # Then check all, cross-reference successes, and produce final implementation
-    $ensembleModels = @(
-        @{ Id = "opus";    Model = "claude-opus-4.6" },
-        @{ Id = "gemini";  Model = "gemini-3-pro-preview" },
-        @{ Id = "gpt";     Model = "gpt-5.2-codex" }
-    )
+    # For each task, spawn 1 rotating specialist + 10 sonnet agents
+    # Rotate the specialist model across tasks to spread API load
+    $rotatingModels = @("claude-opus-4.6", "gemini-3-pro-preview", "gpt-5.2-codex")
     $sonnetModel  = "claude-sonnet-4.5"
     $sonnetCount  = 10
     $crossRefModel = "claude-opus-4.6"
+    $script:p3ModelIndex = 0
+    $sonnetParallelism = 25
 
-    Write-Host "  Phase 3a: Multi-model ensemble migration ($($ensembleModels.Count) specialist + $sonnetCount sonnet per task)..." -ForegroundColor Yellow
+    Write-Host "  Phase 3a: Ensemble migration (1 rotating specialist + $sonnetCount sonnet per task, sonnet parallelism=$sonnetParallelism)..." -ForegroundColor Yellow
 
     # Build the base migration prompt (shared across all models)
     function Build-MigrationPrompt {
@@ -732,8 +754,9 @@ Do NOT run tests. Do NOT run the full test suite. Only build to verify compilati
 "@
     }
 
-    # Step 1: For each task, create ensemble work items (13 per task)
+    # Step 1: For each task, create ensemble work items (1 specialist + 10 sonnet per task)
     $ensembleQueue = @()
+    $sonnetQueue = @()
     foreach ($t in $tasks) {
         $cn = $t.disguised.className
         $fp = $t.disguised.file -replace '/', '\'
@@ -743,32 +766,33 @@ Do NOT run tests. Do NOT run the full test suite. Only build to verify compilati
         $origContent = ""
         if (Test-Path $taskFile) { $origContent = Get-Content $taskFile -Raw }
 
-        # Each ensemble work item: task + model + attempt index + isolated working copy
-        foreach ($em in $ensembleModels) {
-            $attemptDir = Join-Path $p3IterLogDir "ensemble\$cn\$($em.Id)"
-            if (-not (Test-Path $attemptDir)) { New-Item -ItemType Directory -Path $attemptDir -Force | Out-Null }
-            # Copy original file to attempt dir for restoration
-            $origBackup = Join-Path $attemptDir "original.cs.bak"
-            if ($origContent) { $origContent | Set-Content $origBackup -Encoding UTF8 -NoNewline }
+        # One rotating specialist model per task
+        $specialistModel = $rotatingModels[$script:p3ModelIndex % $rotatingModels.Count]
+        $specialistId = $rotatingModels[$script:p3ModelIndex % $rotatingModels.Count] -replace '[^a-zA-Z0-9]', ''
+        $script:p3ModelIndex++
+        $attemptDir = Join-Path $p3IterLogDir "ensemble\$cn\$specialistId"
+        if (-not (Test-Path $attemptDir)) { New-Item -ItemType Directory -Path $attemptDir -Force | Out-Null }
+        $origBackup = Join-Path $attemptDir "original.cs.bak"
+        if ($origContent) { $origContent | Set-Content $origBackup -Encoding UTF8 -NoNewline }
 
-            $ensembleQueue += @{
-                Task         = $t
-                ClassName    = $cn
-                Model        = $em.Model
-                ModelId      = $em.Id
-                AttemptIndex = 0
-                AttemptDir   = $attemptDir
-                OrigBackup   = $origBackup
-                TaskFile     = $taskFile
-            }
+        $ensembleQueue += @{
+            Task         = $t
+            ClassName    = $cn
+            Model        = $specialistModel
+            ModelId      = $specialistId
+            AttemptIndex = 0
+            AttemptDir   = $attemptDir
+            OrigBackup   = $origBackup
+            TaskFile     = $taskFile
         }
+
         for ($si = 0; $si -lt $sonnetCount; $si++) {
             $attemptDir = Join-Path $p3IterLogDir "ensemble\$cn\sonnet-$si"
             if (-not (Test-Path $attemptDir)) { New-Item -ItemType Directory -Path $attemptDir -Force | Out-Null }
             $origBackup = Join-Path $attemptDir "original.cs.bak"
             if ($origContent) { $origContent | Set-Content $origBackup -Encoding UTF8 -NoNewline }
 
-            $ensembleQueue += @{
+            $sonnetQueue += @{
                 Task         = $t
                 ClassName    = $cn
                 Model        = $sonnetModel
@@ -780,10 +804,10 @@ Do NOT run tests. Do NOT run the full test suite. Only build to verify compilati
             }
         }
     }
-    Write-Host "  Ensemble queue: $($ensembleQueue.Count) total attempts ($($tasks.Count) tasks x 13 models)" -ForegroundColor Yellow
+    $totalAttempts = $ensembleQueue.Count + $sonnetQueue.Count
+    Write-Host "  Ensemble queue: $totalAttempts total attempts ($($ensembleQueue.Count) specialist + $($sonnetQueue.Count) sonnet)" -ForegroundColor Yellow
 
-    # Step 2: Run all ensemble attempts via worker pool
-    # Each agent reads the original, writes migrated code to its own attempt dir (NO in-place modification)
+    # Step 2: Run specialist attempts via main worker pool, sonnet attempts via larger pool
     $ensemblePromptBuilder = {
         param($item)
         $cn = $item.ClassName
@@ -815,12 +839,15 @@ CRITICAL ISOLATION RULES (multiple agents run in parallel):
     }
 
     $ensembleResults = Invoke-WorkerPool -TaskQueue $ensembleQueue -PromptBuilder $ensemblePromptBuilder -MaxRetries 0
+    Write-Host "  Specialist attempts complete. Running sonnet batch (parallelism=$sonnetParallelism)..." -ForegroundColor Yellow
+    $sonnetResults = Invoke-WorkerPool -TaskQueue $sonnetQueue -PromptBuilder $ensemblePromptBuilder -Workers $sonnetParallelism -MaxRetries 0
+    $allEnsembleItems = $ensembleQueue + $sonnetQueue
 
     # Step 3: Check which attempts produced valid results (file exists + builds)
     Write-Host ""
     Write-Host "  Phase 3a-check: Validating ensemble attempts..." -ForegroundColor Yellow
     $successesByTask = @{}
-    foreach ($item in $ensembleQueue) {
+    foreach ($item in $allEnsembleItems) {
         $cn = $item.ClassName
         $mid = $item.ModelId
         $migratedFile = Join-Path $item.AttemptDir "migrated.cs"
@@ -840,7 +867,8 @@ CRITICAL ISOLATION RULES (multiple agents run in parallel):
     foreach ($cn in ($tasks | ForEach-Object { $_.disguised.className })) {
         $count = if ($successesByTask.ContainsKey($cn)) { $successesByTask[$cn].Count } else { 0 }
         $color = if ($count -ge 2) { "Green" } elseif ($count -eq 1) { "Yellow" } else { "Red" }
-        Write-Host "  [$cn] $count/13 attempts produced migrated files" -ForegroundColor $color
+        $totalPerTask = 1 + $sonnetCount
+        Write-Host "  [$cn] $count/$totalPerTask attempts produced migrated files" -ForegroundColor $color
     }
 
     # Step 4: Build-verify each successful attempt in isolation
