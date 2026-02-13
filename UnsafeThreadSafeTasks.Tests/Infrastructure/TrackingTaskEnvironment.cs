@@ -14,11 +14,20 @@ namespace UnsafeThreadSafeTasks.Tests.Infrastructure
         public int GetEnvironmentVariableCallCount { get; private set; }
         public List<string> GetCanonicalFormArgs { get; } = new();
         public List<string> GetAbsolutePathArgs { get; } = new();
+        public List<string> GetEnvironmentVariableArgs { get; } = new();
+
+        /// <summary>
+        /// Records every method call in order, e.g. "GetAbsolutePath(foo.txt)".
+        /// </summary>
+        public List<string> ApiCalls { get; } = new();
+
+        public bool WasGetAbsolutePathCalled => GetAbsolutePathCallCount > 0;
 
         public override string GetCanonicalForm(string path)
         {
             GetCanonicalFormCallCount++;
             GetCanonicalFormArgs.Add(path);
+            ApiCalls.Add($"GetCanonicalForm({path})");
             return base.GetCanonicalForm(path);
         }
 
@@ -26,12 +35,15 @@ namespace UnsafeThreadSafeTasks.Tests.Infrastructure
         {
             GetAbsolutePathCallCount++;
             GetAbsolutePathArgs.Add(path);
+            ApiCalls.Add($"GetAbsolutePath({path})");
             return base.GetAbsolutePath(path);
         }
 
         public override string? GetEnvironmentVariable(string name)
         {
             GetEnvironmentVariableCallCount++;
+            GetEnvironmentVariableArgs.Add(name);
+            ApiCalls.Add($"GetEnvironmentVariable({name})");
             return base.GetEnvironmentVariable(name);
         }
     }
