@@ -172,22 +172,22 @@ function Invoke-CopilotAgentAsync {
     $effectiveModel = if ($ModelOverride) { $ModelOverride } else { $model }
 
     # Write a launcher script that captures exit code to a file
-    $launcherFile = "$LogFile.launcher.ps1"
+    # NOTE: No PowerShell or Start-Process redirects — node.exe fails with StandardOutputEncoding
+    # when any stdout redirect is in the process tree. Use cmd.exe to redirect instead.
+    $launcherFile = "$LogFile.launcher.cmd"
     $exitCodeFile = "$LogFile.exitcode"
-    @"
-Set-Location "$WorkingDir"
-`$p = Get-Content "$promptFile" -Raw
-& copilot -p `$p $agentFlags --model $effectiveModel $addDirArgs --share "$LogFile"
-`$LASTEXITCODE | Set-Content "$exitCodeFile" -NoNewline
-exit `$LASTEXITCODE
-"@ | Set-Content $launcherFile -Encoding UTF8
-
     $stdoutFile = "$LogFile.stdout"
     $stderrFile = "$LogFile.stderr"
+    @"
+@echo off
+cd /d "$WorkingDir"
+pwsh -NoProfile -Command "`$p = Get-Content '$promptFile' -Raw; & copilot -p `$p $agentFlags --model $effectiveModel $addDirArgs --share '$LogFile'" > "$stdoutFile" 2> "$stderrFile"
+echo %ERRORLEVEL% > "$exitCodeFile"
+exit /b %ERRORLEVEL%
+"@ | Set-Content $launcherFile -Encoding ASCII
 
     $startTime = Get-Date
-    $proc = Start-Process -FilePath "pwsh" -ArgumentList @("-NoProfile", "-File", $launcherFile) `
-        -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile `
+    $proc = Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", $launcherFile) `
         -NoNewWindow -PassThru
     
     return @{
