@@ -163,29 +163,28 @@ function Invoke-CopilotAgentAsync {
     $promptFile = "$LogFile.prompt.txt"
     $Prompt | Set-Content $promptFile -Encoding UTF8 -NoNewline
 
-    # Build --add-dir arguments
-    $addDirArgs = "--add-dir `"$WorkingDir`""
+    # Build --add-dir arguments (single-quoted for safe embedding in command strings)
+    $addDirArgs = "--add-dir '$WorkingDir'"
     foreach ($d in $ExtraDirs) {
-        $addDirArgs += " --add-dir `"$d`""
+        $addDirArgs += " --add-dir '$d'"
     }
 
     $effectiveModel = if ($ModelOverride) { $ModelOverride } else { $model }
 
     # Write a launcher script that captures exit code to a file
-    # NOTE: Do NOT redirect stdout/stderr — node.exe crashes with StandardOutputEncoding error
-    # when ANY redirect is in the process tree. The --share flag saves agent output to LogFile.
-    $launcherFile = "$LogFile.launcher.cmd"
+    # Uses .ps1 with NO stdout/stderr redirects anywhere in the chain.
+    # Agent output is captured via copilot --share flag.
+    $launcherFile = "$LogFile.launcher.ps1"
     $exitCodeFile = "$LogFile.exitcode"
     @"
-@echo off
-cd /d "$WorkingDir"
-pwsh -NoProfile -Command "`$p = Get-Content '$promptFile' -Raw; & copilot -p `$p $agentFlags --model $effectiveModel $addDirArgs --share '$LogFile'"
-echo %ERRORLEVEL% > "$exitCodeFile"
-exit /b %ERRORLEVEL%
-"@ | Set-Content $launcherFile -Encoding ASCII
+Set-Location '$WorkingDir'
+`$p = Get-Content '$promptFile' -Raw
+& copilot -p `$p $agentFlags --model $effectiveModel $addDirArgs --share '$LogFile'
+`$LASTEXITCODE | Set-Content '$exitCodeFile' -NoNewline
+"@ | Set-Content $launcherFile -Encoding UTF8
 
     $startTime = Get-Date
-    $proc = Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", $launcherFile) `
+    $proc = Start-Process -FilePath "pwsh" -ArgumentList @("-NoProfile", "-File", $launcherFile) `
         -WindowStyle Hidden -PassThru
     
     return @{
