@@ -95,8 +95,11 @@ public class MyTask : TaskBase, IMultiThreadableTask
         // In real MSBuild, ProjectFileOfTaskNode is an absolute path to the project file.
         EnsureProjectDirectoryInitialized();
 
-        // Replace: Path.GetFullPath(somePath)
+        // Replace: Path.GetFullPath(somePath) for absolutization
         // With:    TaskEnvironment.GetAbsolutePath(somePath)
+        
+        // Replace: Path.GetFullPath(somePath) for canonicalization (resolving "..", normalizing)
+        // With:    TaskEnvironment.GetCanonicalForm(somePath)
         
         // Replace: new FileStream(relativePath, ...)
         // With:    new FileStream(TaskEnvironment.GetAbsolutePath(relativePath), ...)
@@ -119,6 +122,18 @@ public class MyTask : TaskBase, IMultiThreadableTask
     }
 }
 ```
+
+### Post-Migration Verification Checklist
+
+After completing the migration, verify ALL forbidden APIs have been replaced. **Adding the attribute, interface, and TaskEnvironment property is not sufficient — the actual forbidden API calls in the Execute()/ExecuteCore() method body MUST be replaced.**
+
+Search the migrated file for these patterns and confirm ZERO occurrences remain in the task logic:
+1. `Path.GetFullPath(` — allowed ONLY inside `EnsureProjectDirectoryInitialized()` for the `BuildEngine.ProjectFileOfTaskNode` fallback; must be zero occurrences in Execute()/ExecuteCore() body
+2. `Environment.CurrentDirectory` — must be zero occurrences
+3. `Environment.GetEnvironmentVariable(` — must be zero occurrences
+4. `Console.` — must be zero occurrences
+
+If any `Path.GetFullPath()` remains in the Execute() body, the migration is **incomplete** and tests will fail.
 
 **Important**: Do NOT null-check `TaskEnvironment`. MSBuild always provides a `TaskEnvironment` instance to tasks implementing `IMultiThreadableTask` — even in single-threaded mode (where it acts as a no-op passthrough). Use `TaskEnvironment` directly.
 
@@ -144,11 +159,26 @@ if (string.IsNullOrEmpty(TaskEnvironment.ProjectDirectory) && BuildEngine != nul
 ## Forbidden API Reference
 
 ### Must Replace with TaskEnvironment:
-- `Path.GetFullPath(path)` → `TaskEnvironment.GetAbsolutePath(path)` (or `.GetCanonicalForm()` if canonicalization was the purpose)
+- `Path.GetFullPath(path)` → see **Path.GetFullPath Replacement Decision** below
 - `Environment.GetEnvironmentVariable(name)` → `TaskEnvironment.GetEnvironmentVariable(name)`
 - `Environment.SetEnvironmentVariable(name, value)` → `TaskEnvironment.SetEnvironmentVariable(name, value)`
 - `Environment.CurrentDirectory` → `TaskEnvironment.ProjectDirectory`
 - `new ProcessStartInfo(...)` → `TaskEnvironment.GetProcessStartInfo()`
+
+### Path.GetFullPath Replacement Decision (CRITICAL)
+Every `Path.GetFullPath()` call MUST be replaced — but the replacement depends on **intent**:
+
+| Original Usage | Intent | Correct Replacement |
+|---|---|---|
+| `Path.GetFullPath(relativePath)` used to make a relative path absolute before file I/O | Absolutization | `TaskEnvironment.GetAbsolutePath(relativePath)` |
+| `Path.GetFullPath(pathWithDotDot)` used to resolve `..` segments, normalize separators, or produce a canonical form | Canonicalization | `TaskEnvironment.GetCanonicalForm(pathWithDotDot)` |
+| `Path.GetFullPath(path)` used for both (make absolute AND normalize) | Both | `TaskEnvironment.GetCanonicalForm(path)` |
+
+**How to determine intent**: Look at the variable name (`canonicalPath`, `normalizedPath`, `fullPath`), the log message (e.g., `"Canonical path:"`, `"Normalized:"`), and whether the input contains `..` segments or mixed separators. If a task's **name** contains "Canonical", "Canonicalize", "Normalize", or "FullPath", it is almost certainly a canonicalization pattern.
+
+**Common mistake**: Replacing `Path.GetFullPath()` with only `TaskEnvironment.GetAbsolutePath()` when the task was doing canonicalization. `GetAbsolutePath()` just prepends `ProjectDirectory` — it does NOT resolve `..` segments or normalize path separators. Use `GetCanonicalForm()` when the original code needed path normalization.
+
+**WARNING**: `TaskEnvironment.GetCanonicalForm(path)` is a method directly on `TaskEnvironment`. Do NOT confuse it with `AbsolutePath.GetCanonicalForm()` (which is a method on the `AbsolutePath` struct). Call it as: `TaskEnvironment.GetCanonicalForm(path)`.
 
 ### Must Use Absolute Paths:
 - `File.Exists(path)` — path must be absolute
@@ -310,4 +340,5 @@ dotnet test src/Tasks/Microsoft.NET.Build.Tasks.UnitTests/Microsoft.NET.Build.Ta
 - Trace ALL path strings through helper methods to catch indirect file API usage
 - `GetAbsolutePath()` throws on null/empty — handle in batch operations
 - The real MSBuild `AbsolutePath` requires fully-qualified paths (with drive letter on Windows). Test paths must be fully qualified — use `Path.GetFullPath()` on synthetic test paths before passing to `TaskEnvironmentHelper.CreateForTest()`.
-- For `Path.GetFullPath()` used for canonicalization, use `TaskEnvironment.GetAbsolutePath(path).GetCanonicalForm()`
+- For `Path.GetFullPath()` used for canonicalization, use `TaskEnvironment.GetCanonicalForm(path)` (NOT `GetAbsolutePath` — that does not normalize `..` segments)
+- **Every** `Path.GetFullPath()` in Execute() body must be replaced — do NOT leave any behind after adding the interface/attribute

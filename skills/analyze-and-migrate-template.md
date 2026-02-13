@@ -38,7 +38,7 @@ Read the task source file completely.
 
 ### Step 2: Analyze for Forbidden APIs
 Search the task code for ALL of these patterns:
-- `Path.GetFullPath(` — needs TaskEnvironment.GetAbsolutePath()
+- `Path.GetFullPath(` — needs TaskEnvironment replacement (see decision table below)
 - `File.Exists(`, `File.Open(`, `File.Create(`, `File.ReadAllText(`, `File.WriteAllText(`, `File.Delete(`, `File.Copy(`, `File.Move(` — paths must be absolute
 - `Directory.Exists(`, `Directory.CreateDirectory(`, `Directory.Delete(` — paths must be absolute
 - `new FileStream(`, `new StreamReader(`, `new StreamWriter(` — paths must be absolute
@@ -51,6 +51,12 @@ Search the task code for ALL of these patterns:
 - `Console.` — forbidden
 
 Also trace path strings through helper method calls — a path might flow into a helper that internally uses File APIs.
+
+**Path.GetFullPath Replacement Decision Table:**
+- If `Path.GetFullPath()` is used to make a relative path absolute (e.g., before passing to File.Exists): → `TaskEnvironment.GetAbsolutePath(path)`
+- If `Path.GetFullPath()` is used for canonicalization (resolving `..`, normalizing separators): → `TaskEnvironment.GetCanonicalForm(path)`
+- If unsure: → `TaskEnvironment.GetCanonicalForm(path)` (it does both — absolutizes AND normalizes)
+- Look for clues: variable name (`canonicalPath`, `normalizedPath`), task name ("Canonical", "Normalize"), log messages ("Canonical path:"), and whether inputs may contain `..` segments.
 
 ### Step 3: Write Failing Tests FIRST (before any task code changes)
 Create test file in `src/Tasks/Microsoft.NET.Build.Tasks.UnitTests/`.
@@ -95,6 +101,13 @@ public class TheTask : TaskBase, IMultiThreadableTask
 }
 ```
 Follow the interface-migration-template.md skill for detailed replacement steps.
+
+**Post-migration verification checklist** (CRITICAL — run before proceeding to tests):
+1. Search the migrated file for `Path.GetFullPath(` — there must be ZERO occurrences in Execute()/ExecuteCore() body (the only allowed usage is in the defensive `ProjectDirectory` initialization from `BuildEngine.ProjectFileOfTaskNode`)
+2. Search for `Environment.CurrentDirectory` — must be zero occurrences
+3. Search for `Environment.GetEnvironmentVariable(` — must be zero occurrences
+4. Every file I/O call (`File.Exists`, `File.ReadAllText`, etc.) must receive an absolute path from `TaskEnvironment.GetAbsolutePath()` or `TaskEnvironment.GetCanonicalForm()`
+5. Adding the attribute/interface/property is NOT enough — the actual forbidden API calls in the method body MUST be replaced
 
 ### Step 6: Verify Tests PASS
 ```bash
