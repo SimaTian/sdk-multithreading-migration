@@ -181,8 +181,11 @@ Write-Host "║  Step 3: Build Reference Test Suite       ║" -ForegroundColor 
 Write-Host "╚═══════════════════════════════════════════╝" -ForegroundColor Cyan
 
 Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Building..." -ForegroundColor Yellow
+$prevEAP3 = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 $buildOutput = & dotnet build $testsProject --verbosity quiet 2>&1
 $buildExitCode = $LASTEXITCODE
+$ErrorActionPreference = $prevEAP3
 $buildErrors = @()
 
 if ($buildExitCode -ne 0) {
@@ -228,14 +231,16 @@ if ($buildExitCode -ne 0) {
 } else {
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Running Fixed tests (filter: _Fixed|_FixedTask)..." -ForegroundColor Yellow
 
+    $prevEAP2 = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     $testOutput = & dotnet test $testsProject `
         --filter "FullyQualifiedName~_Fixed" `
         --logger "trx;LogFileName=$trxFile" `
         --results-directory $logDir `
         --no-build `
         --verbosity quiet 2>&1
-
     $testExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEAP2
 }
 
 # ─── Step 5: Parse and report results ────────────────────────────────────────
