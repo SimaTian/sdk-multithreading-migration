@@ -326,7 +326,7 @@ function Invoke-WorkerPool {
     return @($results | Sort-Object { $_.Index })
 }
 
-$script:Parallelism = 10
+$script:Parallelism = 25
 
 function Parse-TestResults {
     param([string]$TrxPath)
