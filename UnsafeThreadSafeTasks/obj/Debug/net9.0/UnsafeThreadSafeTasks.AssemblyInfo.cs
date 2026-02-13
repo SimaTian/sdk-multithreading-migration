@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("UnsafeThreadSafeTasks")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+07267a910811595fe044b9af7ba87897bc01a5cc")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+881c433560dbb5189cd73e2b35a14a1b2c58c740")]
 [assembly: System.Reflection.AssemblyProductAttribute("UnsafeThreadSafeTasks")]
 [assembly: System.Reflection.AssemblyTitleAttribute("UnsafeThreadSafeTasks")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

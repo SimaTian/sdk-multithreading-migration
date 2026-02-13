@@ -1,4 +1,5 @@
 using Microsoft.Build.Framework;
+using Microsoft.Build.Utilities;
 using UnsafeThreadSafeTasks.Tests.Infrastructure;
 using Xunit;
 using Broken = UnsafeThreadSafeTasks.ProcessViolations;
@@ -176,6 +177,90 @@ namespace UnsafeThreadSafeTasks.Tests
 
             Assert.False(result);
             Assert.Single(engine.Errors);
+        }
+
+        // ── OutputCleanManager ──────────────────────────────────────────
+
+        [Fact]
+        public void OutputCleanManager_BrokenTask_ShouldCleanOutputDirectory()
+        {
+            var engine = new MockBuildEngine();
+            var projectDir = TestHelper.CreateNonCwdTempDirectory();
+            try
+            {
+                string outDir = Path.Combine(projectDir, "bin", "Debug");
+                Directory.CreateDirectory(outDir);
+                File.WriteAllText(Path.Combine(outDir, "App.dll"), "fake");
+                File.WriteAllText(Path.Combine(outDir, "App.pdb"), "fake");
+                File.WriteAllText(Path.Combine(outDir, "App.license"), "keep-me");
+
+                var task = new Broken.OutputCleanManager
+                {
+                    BuildEngine = engine,
+                    TaskEnvironment = TaskEnvironmentHelper.CreateForTest(projectDir),
+                    OutputDirectories = new ITaskItem[] { new TaskItem(outDir) },
+                    PreservePatterns = "*.license",
+                    HandleLockedFiles = false
+                };
+
+                bool result;
+                try { result = task.Execute(); } catch { result = false; }
+
+                Assert.True(result);
+                Assert.True(task.CleanedFiles > 0);
+            }
+            finally
+            {
+                TestHelper.CleanupTempDirectory(projectDir);
+            }
+        }
+
+        [Fact]
+        public void OutputCleanManager_FixedTask_ShouldCleanOutputDirectory()
+        {
+            var engine = new MockBuildEngine();
+            var projectDir = TestHelper.CreateNonCwdTempDirectory();
+            try
+            {
+                string outDir = Path.Combine(projectDir, "bin", "Debug");
+                Directory.CreateDirectory(outDir);
+                File.WriteAllText(Path.Combine(outDir, "App.dll"), "fake");
+                File.WriteAllText(Path.Combine(outDir, "App.pdb"), "fake");
+                File.WriteAllText(Path.Combine(outDir, "App.license"), "keep-me");
+
+                var task = new Fixed.OutputCleanManager
+                {
+                    BuildEngine = engine,
+                    TaskEnvironment = TaskEnvironmentHelper.CreateForTest(projectDir),
+                    OutputDirectories = new ITaskItem[] { new TaskItem(outDir) },
+                    PreservePatterns = "*.license",
+                    HandleLockedFiles = false
+                };
+
+                bool result = task.Execute();
+
+                Assert.True(result);
+                Assert.Equal(2, task.CleanedFiles);
+                Assert.Equal(1, task.SkippedFiles);
+                // The .license file should be preserved
+                Assert.True(File.Exists(Path.Combine(outDir, "App.license")));
+                // The .dll and .pdb files should be deleted
+                Assert.False(File.Exists(Path.Combine(outDir, "App.dll")));
+                Assert.False(File.Exists(Path.Combine(outDir, "App.pdb")));
+            }
+            finally
+            {
+                TestHelper.CleanupTempDirectory(projectDir);
+            }
+        }
+
+        [Fact]
+        public void OutputCleanManager_FixedTask_ShouldImplementIMultiThreadableTask()
+        {
+            var task = new Fixed.OutputCleanManager();
+            Assert.IsAssignableFrom<IMultiThreadableTask>(task);
+            Assert.Equal(0, task.CleanedFiles);
+            Assert.Equal(0, task.SkippedFiles);
         }
     }
 }

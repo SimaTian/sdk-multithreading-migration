@@ -1,3 +1,4 @@
+using System.Linq;
 using Xunit;
 using UnsafeThreadSafeTasks.Tests.Infrastructure;
 using Microsoft.Build.Framework;
@@ -165,6 +166,79 @@ namespace UnsafeThreadSafeTasks.Tests
 
             // Assert CORRECT behavior: task should succeed
             Assert.True(result);
+        }
+
+        #endregion
+
+        #region AssemblyVersionPatcher
+
+        [Fact]
+        public void AssemblyVersionPatcher_Broken_ShouldPatchVersionInCsproj()
+        {
+            string projContent = @"<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0</FileVersion>
+  </PropertyGroup>
+</Project>";
+            string projFile = Path.Combine(_projectDir, "App.csproj");
+            File.WriteAllText(projFile, projContent);
+
+            var task = new BrokenMismatch.AssemblyVersionPatcher
+            {
+                BuildEngine = _engine,
+                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_projectDir),
+                ProjectFiles = new ITaskItem[] { new Microsoft.Build.Utilities.TaskItem(projFile) },
+                VersionPrefix = "2.5.0",
+                CreateBackups = false
+            };
+
+            bool result;
+            try { result = task.Execute(); } catch { result = false; }
+
+            Assert.True(result);
+            Assert.NotEmpty(task.PatchedFiles);
+        }
+
+        [Fact]
+        public void AssemblyVersionPatcher_Fixed_ShouldPatchVersionInCsproj()
+        {
+            string projContent = @"<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0</FileVersion>
+  </PropertyGroup>
+</Project>";
+            string projFile = Path.Combine(_projectDir, "App.csproj");
+            File.WriteAllText(projFile, projContent);
+
+            var task = new FixedMismatch.AssemblyVersionPatcher
+            {
+                BuildEngine = _engine,
+                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_projectDir),
+                ProjectFiles = new ITaskItem[] { new Microsoft.Build.Utilities.TaskItem("App.csproj") },
+                VersionPrefix = "2.5.0",
+                CreateBackups = false
+            };
+
+            bool result = task.Execute();
+
+            Assert.True(result, $"Execute failed. Errors: {string.Join("; ", _engine.Errors.Select(e => e.Message))}");
+            Assert.NotEmpty(task.PatchedFiles);
+            // Verify the file was patched with new version
+            string patchedContent = File.ReadAllText(projFile);
+            Assert.Contains("<Version>2.5.0</Version>", patchedContent);
+            Assert.Contains("<AssemblyVersion>2.5.0.0</AssemblyVersion>", patchedContent);
+        }
+
+        [Fact]
+        public void AssemblyVersionPatcher_FixedTask_ShouldHavePatchedFilesOutput()
+        {
+            var task = new FixedMismatch.AssemblyVersionPatcher();
+            Assert.IsAssignableFrom<IMultiThreadableTask>(task);
+            Assert.NotNull(task.PatchedFiles);
         }
 
         #endregion
