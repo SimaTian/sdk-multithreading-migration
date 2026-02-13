@@ -177,7 +177,8 @@ function Invoke-CopilotAgentAsync {
     @"
 Set-Location "$WorkingDir"
 `$p = Get-Content "$promptFile" -Raw
-& copilot -p `$p $agentFlags --model $effectiveModel $addDirArgs --share "$LogFile" *> "$LogFile.stdout"
+`$env:NODE_OPTIONS = "--no-warnings"
+& copilot -p `$p $agentFlags --model $effectiveModel $addDirArgs --share "$LogFile" 2>"$LogFile.stderr" | Out-File "$LogFile.stdout" -Encoding UTF8
 `$LASTEXITCODE | Set-Content "$exitCodeFile" -NoNewline
 exit `$LASTEXITCODE
 "@ | Set-Content $launcherFile -Encoding UTF8
