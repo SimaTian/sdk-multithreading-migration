@@ -150,7 +150,8 @@ function Invoke-CopilotAgentAsync {
         [string]$WorkingDir,
         [string]$LogFile,
         [string]$Label,
-        [string[]]$ExtraDirs = @()
+        [string[]]$ExtraDirs = @(),
+        [string]$ModelOverride = ""
     )
 
     $iterLogDir = Split-Path $LogFile -Parent
@@ -168,13 +169,15 @@ function Invoke-CopilotAgentAsync {
         $addDirArgs += " --add-dir `"$d`""
     }
 
+    $effectiveModel = if ($ModelOverride) { $ModelOverride } else { $model }
+
     # Write a launcher script that captures exit code to a file
     $launcherFile = "$LogFile.launcher.ps1"
     $exitCodeFile = "$LogFile.exitcode"
     @"
 Set-Location "$WorkingDir"
 `$p = Get-Content "$promptFile" -Raw
-& copilot -p `$p $agentFlags --model $model $addDirArgs --share "$LogFile" *> "$LogFile.stdout"
+& copilot -p `$p $agentFlags --model $effectiveModel $addDirArgs --share "$LogFile" *> "$LogFile.stdout"
 `$LASTEXITCODE | Set-Content "$exitCodeFile" -NoNewline
 exit `$LASTEXITCODE
 "@ | Set-Content $launcherFile -Encoding UTF8
@@ -270,8 +273,10 @@ function Invoke-WorkerPool {
             if ($null -eq $task) { break }
 
             $params = & $PromptBuilder $task
+            $modelOvr = if ($params.ModelOverride) { $params.ModelOverride } else { "" }
             $job = Invoke-CopilotAgentAsync -Prompt $params.Prompt -WorkingDir $params.WorkingDir `
-                -LogFile $params.LogFile -Label $params.Label -ExtraDirs $params.ExtraDirs
+                -LogFile $params.LogFile -Label $params.Label -ExtraDirs $params.ExtraDirs `
+                -ModelOverride $modelOvr
             $job.TaskData = $task
             $job.Index = if ($isRetry) { $task._OrigIndex } else { $queueIndex }
             $running.Add($job) | Out-Null
@@ -660,9 +665,22 @@ function Invoke-Phase3 {
     }
     $p3SkillsContent = $skillsContent
 
-    # Phase 3a: Migrate all tasks via worker pool
-    Write-Host "  Phase 3a: Migrating tasks..." -ForegroundColor Yellow
-    $migratePromptBuilder = {
+    # Phase 3a: Multi-model ensemble migration
+    # For each task, spawn 13 agents in parallel (1 opus, 1 gemini, 1 gpt-codex, 10 sonnet)
+    # Then check all, cross-reference successes, and produce final implementation
+    $ensembleModels = @(
+        @{ Id = "opus";    Model = "claude-opus-4.6" },
+        @{ Id = "gemini";  Model = "gemini-3-pro-preview" },
+        @{ Id = "gpt";     Model = "gpt-5.2-codex" }
+    )
+    $sonnetModel  = "claude-sonnet-4.5"
+    $sonnetCount  = 10
+    $crossRefModel = "claude-opus-4.6"
+
+    Write-Host "  Phase 3a: Multi-model ensemble migration ($($ensembleModels.Count) specialist + $sonnetCount sonnet per task)..." -ForegroundColor Yellow
+
+    # Build the base migration prompt (shared across all models)
+    function Build-MigrationPrompt {
         param($t)
         $cn = $t.disguised.className
         $fp = $t.disguised.file -replace '/', '\'
@@ -675,7 +693,7 @@ function Invoke-Phase3 {
             $promptContent = Get-Content $promptFile -Raw
         }
 
-        $p = @"
+        return @"
 You are a migration agent. Migrate this MSBuild task to be properly thread-safe.
 
 TASK FILE: $fullPath
@@ -709,16 +727,269 @@ RULES:
 After migrating, verify the file compiles: dotnet build $testTasksRepo\src\SdkTasks\SdkTasks.csproj --verbosity quiet
 Do NOT run tests. Do NOT run the full test suite. Only build to verify compilation.
 "@
+    }
+
+    # Step 1: For each task, create ensemble work items (13 per task)
+    $ensembleQueue = @()
+    foreach ($t in $tasks) {
+        $cn = $t.disguised.className
+        $fp = $t.disguised.file -replace '/', '\'
+        $taskFile = Join-Path $testTasksRepo "src\SdkTasks\$fp"
+
+        # Save original file content for restoration between attempts
+        $origContent = ""
+        if (Test-Path $taskFile) { $origContent = Get-Content $taskFile -Raw }
+
+        # Each ensemble work item: task + model + attempt index + isolated working copy
+        foreach ($em in $ensembleModels) {
+            $attemptDir = Join-Path $p3IterLogDir "ensemble\$cn\$($em.Id)"
+            if (-not (Test-Path $attemptDir)) { New-Item -ItemType Directory -Path $attemptDir -Force | Out-Null }
+            # Copy original file to attempt dir for restoration
+            $origBackup = Join-Path $attemptDir "original.cs.bak"
+            if ($origContent) { $origContent | Set-Content $origBackup -Encoding UTF8 -NoNewline }
+
+            $ensembleQueue += @{
+                Task         = $t
+                ClassName    = $cn
+                Model        = $em.Model
+                ModelId      = $em.Id
+                AttemptIndex = 0
+                AttemptDir   = $attemptDir
+                OrigBackup   = $origBackup
+                TaskFile     = $taskFile
+            }
+        }
+        for ($si = 0; $si -lt $sonnetCount; $si++) {
+            $attemptDir = Join-Path $p3IterLogDir "ensemble\$cn\sonnet-$si"
+            if (-not (Test-Path $attemptDir)) { New-Item -ItemType Directory -Path $attemptDir -Force | Out-Null }
+            $origBackup = Join-Path $attemptDir "original.cs.bak"
+            if ($origContent) { $origContent | Set-Content $origBackup -Encoding UTF8 -NoNewline }
+
+            $ensembleQueue += @{
+                Task         = $t
+                ClassName    = $cn
+                Model        = $sonnetModel
+                ModelId      = "sonnet-$si"
+                AttemptIndex = $si
+                AttemptDir   = $attemptDir
+                OrigBackup   = $origBackup
+                TaskFile     = $taskFile
+            }
+        }
+    }
+    Write-Host "  Ensemble queue: $($ensembleQueue.Count) total attempts ($($tasks.Count) tasks x 13 models)" -ForegroundColor Yellow
+
+    # Step 2: Run all ensemble attempts via worker pool
+    # Each agent reads the original, writes migrated code to its own attempt dir (NO in-place modification)
+    $ensemblePromptBuilder = {
+        param($item)
+        $cn = $item.ClassName
+        $mid = $item.ModelId
+        $origBackup = $item.OrigBackup
+        $taskFile = $item.TaskFile
+        $attemptDir = $item.AttemptDir
+
+        $basePrompt = Build-MigrationPrompt $item.Task
+        $outputFile = Join-Path $attemptDir "migrated.cs"
+        $p = @"
+$basePrompt
+
+CRITICAL ISOLATION RULES (multiple agents run in parallel):
+- Do NOT modify the task file at $taskFile directly
+- Read the ORIGINAL from: $origBackup
+- Write your migrated version to: $outputFile
+- Do NOT run dotnet build (other agents share the project). The build will be verified separately.
+- Produce the complete file content — all using statements, namespace, class, everything.
+"@
         return @{
-            Prompt     = $p
-            LogFile    = Join-Path $p3IterLogDir "migrate-$cn.log"
-            Label      = "Mig:$cn"
-            WorkingDir = $testTasksRepo
-            ExtraDirs  = @()
+            Prompt        = $p
+            LogFile       = Join-Path $attemptDir "migrate.log"
+            Label         = "Ens:$cn/$mid"
+            WorkingDir    = $testTasksRepo
+            ExtraDirs     = @()
+            ModelOverride = $item.Model
         }
     }
 
-    $migrateResults = Invoke-WorkerPool -TaskQueue $tasks -PromptBuilder $migratePromptBuilder
+    $ensembleResults = Invoke-WorkerPool -TaskQueue $ensembleQueue -PromptBuilder $ensemblePromptBuilder -MaxRetries 0
+
+    # Step 3: Check which attempts produced valid results (file exists + builds)
+    Write-Host ""
+    Write-Host "  Phase 3a-check: Validating ensemble attempts..." -ForegroundColor Yellow
+    $successesByTask = @{}
+    foreach ($item in $ensembleQueue) {
+        $cn = $item.ClassName
+        $mid = $item.ModelId
+        $migratedFile = Join-Path $item.AttemptDir "migrated.cs"
+        if (Test-Path $migratedFile) {
+            if (-not $successesByTask.ContainsKey($cn)) { $successesByTask[$cn] = @() }
+            $successesByTask[$cn] += @{
+                ModelId      = $mid
+                Model        = $item.Model
+                AttemptDir   = $item.AttemptDir
+                MigratedFile = $migratedFile
+                TaskFile     = $item.TaskFile
+                Task         = $item.Task
+            }
+        }
+    }
+
+    foreach ($cn in ($tasks | ForEach-Object { $_.disguised.className })) {
+        $count = if ($successesByTask.ContainsKey($cn)) { $successesByTask[$cn].Count } else { 0 }
+        $color = if ($count -ge 2) { "Green" } elseif ($count -eq 1) { "Yellow" } else { "Red" }
+        Write-Host "  [$cn] $count/13 attempts produced migrated files" -ForegroundColor $color
+    }
+
+    # Step 4: Build-verify each successful attempt in isolation
+    # This runs sequentially per task to avoid concurrent file modification
+    Write-Host ""
+    Write-Host "  Phase 3a-build: Build-testing successful attempts..." -ForegroundColor Yellow
+    $buildVerifiedByTask = @{}
+    foreach ($cn in $successesByTask.Keys) {
+        $buildVerifiedByTask[$cn] = @()
+        foreach ($attempt in $successesByTask[$cn]) {
+            # Restore original, copy this attempt, build
+            $origBackup = Join-Path $attempt.AttemptDir "original.cs.bak"
+            if (Test-Path $origBackup) {
+                Copy-Item $origBackup $attempt.TaskFile -Force
+            }
+            Copy-Item $attempt.MigratedFile $attempt.TaskFile -Force
+
+            $prevEAP = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            $buildOut = & dotnet build "$testTasksRepo\src\SdkTasks\SdkTasks.csproj" --verbosity quiet 2>&1
+            $buildExit = $LASTEXITCODE
+            $ErrorActionPreference = $prevEAP
+
+            if ($buildExit -eq 0) {
+                $buildVerifiedByTask[$cn] += $attempt
+                Write-Host "    [$cn/$($attempt.ModelId)] BUILD OK" -ForegroundColor Green
+            } else {
+                Write-Host "    [$cn/$($attempt.ModelId)] BUILD FAIL" -ForegroundColor Red
+            }
+
+            # Restore original after each attempt so project stays clean for next attempt
+            if (Test-Path $origBackup) {
+                Copy-Item $origBackup $attempt.TaskFile -Force
+            }
+        }
+    }
+
+    # Summary
+    $totalVerified = ($buildVerifiedByTask.Values | ForEach-Object { $_.Count } | Measure-Object -Sum).Sum
+    $totalAttempts = ($successesByTask.Values | ForEach-Object { $_.Count } | Measure-Object -Sum).Sum
+    Write-Host "  Build verification: $totalVerified/$totalAttempts attempts passed" -ForegroundColor $(if ($totalVerified -gt 0) { "Green" } else { "Red" })
+
+    # Step 5: Cross-reference successful attempts using opus to produce final implementation
+    Write-Host ""
+    Write-Host "  Phase 3a-crossref: Cross-referencing with $crossRefModel..." -ForegroundColor Yellow
+    $crossRefQueue = @()
+    foreach ($t in $tasks) {
+        $cn = $t.disguised.className
+        $fp = $t.disguised.file -replace '/', '\'
+        $taskFile = Join-Path $testTasksRepo "src\SdkTasks\$fp"
+        $origBackup = Join-Path $p3IterLogDir "ensemble\$cn\opus\original.cs.bak"
+
+        if ($buildVerifiedByTask.ContainsKey($cn) -and $buildVerifiedByTask[$cn].Count -gt 0) {
+            # Build cross-reference prompt with all successful attempts
+            $attemptList = ""
+            $attemptIndex = 1
+            foreach ($attempt in $buildVerifiedByTask[$cn]) {
+                $content = Get-Content $attempt.MigratedFile -Raw
+                $attemptList += @"
+
+=== ATTEMPT $attemptIndex (model: $($attempt.Model), id: $($attempt.ModelId)) ===
+$content
+
+"@
+                $attemptIndex++
+            }
+
+            $crossRefDir = Join-Path $p3IterLogDir "crossref\$cn"
+            if (-not (Test-Path $crossRefDir)) { New-Item -ItemType Directory -Path $crossRefDir -Force | Out-Null }
+
+            $crossRefQueue += @{
+                Task       = $t
+                ClassName  = $cn
+                TaskFile   = $taskFile
+                OrigBackup = $origBackup
+                AttemptList = $attemptList
+                AttemptCount = $buildVerifiedByTask[$cn].Count
+                CrossRefDir = $crossRefDir
+            }
+        } else {
+            # No successful attempts — use single-model fallback (default model)
+            Write-Host "  [$cn] No successful ensemble attempts — will use single-model fallback" -ForegroundColor Red
+            $crossRefDir = Join-Path $p3IterLogDir "crossref\$cn"
+            if (-not (Test-Path $crossRefDir)) { New-Item -ItemType Directory -Path $crossRefDir -Force | Out-Null }
+
+            $crossRefQueue += @{
+                Task        = $t
+                ClassName   = $cn
+                TaskFile    = $taskFile
+                OrigBackup  = $origBackup
+                AttemptList = ""
+                AttemptCount = 0
+                CrossRefDir = $crossRefDir
+            }
+        }
+    }
+
+    $crossRefPromptBuilder = {
+        param($item)
+        $cn = $item.ClassName
+        $taskFile = $item.TaskFile
+        $origBackup = $item.OrigBackup
+
+        if ($item.AttemptCount -gt 0) {
+            $p = @"
+You are a senior migration reviewer. Multiple agents attempted to migrate this MSBuild task to be thread-safe.
+Your job is to cross-reference ALL successful attempts below and produce the BEST final implementation.
+
+TASK FILE: $taskFile
+ORIGINAL (before migration): $origBackup
+
+$($item.AttemptCount) SUCCESSFUL ATTEMPTS:
+$($item.AttemptList)
+
+INSTRUCTIONS:
+1. First, restore the original: Copy-Item "$origBackup" "$taskFile" -Force
+2. Read and compare all attempts above
+3. Identify the BEST patterns from each — prefer implementations that:
+   a. Replace ALL forbidden APIs (none missed)
+   b. Use TaskEnvironment consistently (no Path.GetFullPath, no Environment.*)
+   c. Preserve original logic and public API surface
+   d. Handle edge cases (null checks, error handling) cleanly
+4. Write the final merged implementation to: $taskFile
+5. Verify it compiles: dotnet build $testTasksRepo\src\SdkTasks\SdkTasks.csproj --verbosity quiet
+6. Do NOT modify test files. Do NOT run tests.
+"@
+        } else {
+            # Fallback: no successful attempts, do fresh migration
+            $basePrompt = Build-MigrationPrompt $item.Task
+            $p = @"
+$basePrompt
+
+NOTE: This is a fallback — all previous ensemble attempts failed. Be extra careful.
+First restore the original: Copy-Item "$origBackup" "$taskFile" -Force
+Then perform the migration.
+"@
+        }
+
+        return @{
+            Prompt        = $p
+            LogFile       = Join-Path $item.CrossRefDir "crossref.log"
+            Label         = "XRef:$cn"
+            WorkingDir    = $testTasksRepo
+            ExtraDirs     = @()
+            ModelOverride = $crossRefModel
+        }
+    }
+
+    $crossRefResults = Invoke-WorkerPool -TaskQueue $crossRefQueue -PromptBuilder $crossRefPromptBuilder
+
+    # Map cross-ref results back as migration results (so Phase 3b check step sees them)
+    $migrateResults = $crossRefResults
 
     # Phase 3b: Check all tasks via worker pool
     Write-Host ""
