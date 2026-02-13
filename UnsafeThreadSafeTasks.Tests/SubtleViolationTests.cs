@@ -1,3 +1,4 @@
+using System.Linq;
 using Xunit;
 using UnsafeThreadSafeTasks.Tests.Infrastructure;
 using Microsoft.Build.Framework;
@@ -264,6 +265,74 @@ namespace UnsafeThreadSafeTasks.Tests
 
             Assert.True(result);
             Assert.StartsWith(_projectDir, task.CanonicalPath);
+        }
+
+        #endregion
+
+        #region SourceEncodingFixer
+
+        [Fact]
+        public void SourceEncodingFixer_Broken_ShouldFixEncoding()
+        {
+            string srcDir = Path.Combine(_projectDir, "src");
+            Directory.CreateDirectory(srcDir);
+            // Write a file without BOM (plain ASCII/UTF-8 no BOM)
+            File.WriteAllBytes(Path.Combine(srcDir, "Test.cs"),
+                System.Text.Encoding.ASCII.GetBytes("// test file content"));
+
+            var task = new BrokenSubtle.SourceEncodingFixer
+            {
+                BuildEngine = _engine,
+                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_projectDir),
+                SourceDirectory = srcDir,
+                FileExtensions = ".cs",
+                TargetEncoding = "utf-8-bom",
+                CreateBackups = false,
+                NormalizeLineEndings = false
+            };
+
+            bool result;
+            try { result = task.Execute(); } catch { result = false; }
+
+            Assert.True(result);
+            Assert.NotEmpty(task.ModifiedFiles);
+        }
+
+        [Fact]
+        public void SourceEncodingFixer_Fixed_ShouldFixEncoding()
+        {
+            string srcDir = Path.Combine(_projectDir, "src");
+            Directory.CreateDirectory(srcDir);
+            File.WriteAllBytes(Path.Combine(srcDir, "Test.cs"),
+                System.Text.Encoding.ASCII.GetBytes("// test file content"));
+
+            var task = new FixedSubtle.SourceEncodingFixer
+            {
+                BuildEngine = _engine,
+                TaskEnvironment = TaskEnvironmentHelper.CreateForTest(_projectDir),
+                SourceDirectory = srcDir,
+                FileExtensions = ".cs",
+                TargetEncoding = "utf-8-bom",
+                CreateBackups = false,
+                NormalizeLineEndings = false
+            };
+
+            bool result = task.Execute();
+
+            Assert.True(result, $"Execute failed. Errors: {string.Join("; ", _engine.Errors.Select(e => e.Message))}");
+            Assert.NotEmpty(task.ModifiedFiles);
+            // Verify the file was actually re-encoded with BOM
+            byte[] bytes = File.ReadAllBytes(Path.Combine(srcDir, "Test.cs"));
+            Assert.True(bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF,
+                "File should have UTF-8 BOM after encoding fix");
+        }
+
+        [Fact]
+        public void SourceEncodingFixer_FixedTask_ShouldHaveModifiedFilesOutput()
+        {
+            var task = new FixedSubtle.SourceEncodingFixer();
+            Assert.IsAssignableFrom<IMultiThreadableTask>(task);
+            Assert.NotNull(task.ModifiedFiles);
         }
 
         #endregion

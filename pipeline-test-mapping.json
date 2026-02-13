@@ -1,17 +1,22 @@
 {
   "description": "Maps original broken tasks to disguised pipeline test tasks",
   "generatedAt": "2025-01-01T00:00:00Z",
-  "totalTasks": 46,
+  "totalTasks": 54,
   "categories": [
     "Analysis",
     "Build",
+    "Cleanup",
+    "CodeAnalysis",
     "Compilation",
     "Compatibility",
     "Configuration",
+    "Deployment",
     "Diagnostics",
     "Packaging",
     "Resources",
-    "Tools"
+    "Tools",
+    "Versioning",
+    "Workspace"
   ],
   "tasks": [
     {
@@ -749,6 +754,134 @@
       },
       "violationType": "FileSystemWatcher sends global notifications that interfere across concurrent tasks",
       "renamingGuidance": "Rename to '_changeDetector', 'detectedChanges'. Remove 'Global', 'Notifications' from identifiers. Use 'DetectChanges', 'MonitorChanges'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/ArtifactPublisher.cs",
+        "className": "ArtifactPublisher",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Deployment/DeploymentArtifactStager.cs",
+        "className": "DeploymentArtifactStager",
+        "namespace": "SdkTasks.Deployment",
+        "category": "Deployment"
+      },
+      "violationType": "Uses Path.GetFullPath for artifact publish paths and Thread.Sleep in retry loops instead of TaskEnvironment-based resolution",
+      "renamingGuidance": "Rename to 'inputDirectories', 'stagingDirectory', 'inventoryRecord'. Rename methods to 'StageWithRetry', 'WriteInventory', 'ResolveArtifactPath'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/SolutionBackupManager.cs",
+        "className": "SolutionBackupManager",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Workspace/WorkspaceSnapshotCreator.cs",
+        "className": "WorkspaceSnapshotCreator",
+        "namespace": "SdkTasks.Workspace",
+        "category": "Workspace"
+      },
+      "violationType": "Uses Environment.GetFolderPath, DateTime.Now, Path.GetFullPath, and direct filesystem operations for backup/restore without TaskEnvironment",
+      "renamingGuidance": "Rename to 'workspacePath', 'snapshotRoot', 'capturedFiles'. Rename methods to 'ExecuteSnapshot', 'ExecuteRollback', 'PruneOldSnapshots'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/NuGetRestoreValidator.cs",
+        "className": "NuGetRestoreValidator",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Packaging/PackageIntegrityVerifier.cs",
+        "className": "PackageIntegrityVerifier",
+        "namespace": "SdkTasks.Packaging",
+        "category": "Packaging"
+      },
+      "violationType": "Uses Path.GetFullPath for package directory resolution and Environment.GetEnvironmentVariable/GetFolderPath for fallback paths",
+      "renamingGuidance": "Rename to 'declaredPackages', 'packageCacheDirectory', 'unresolvedPackages'. Rename methods to 'VerifySinglePackage', 'LocatePackageAssembly', 'PersistVerificationReport'."
+    },
+    {
+      "original": {
+        "file": "SubtleViolations/SourceEncodingFixer.cs",
+        "className": "SourceEncodingFixer",
+        "namespace": "UnsafeThreadSafeTasks.SubtleViolations",
+        "category": "SubtleViolations"
+      },
+      "disguised": {
+        "file": "CodeAnalysis/SourceFileNormalizer.cs",
+        "className": "SourceFileNormalizer",
+        "namespace": "SdkTasks.CodeAnalysis",
+        "category": "CodeAnalysis"
+      },
+      "violationType": "Hidden Path.GetFullPath calls in private helpers for source directory resolution, backup creation, and temp file operations",
+      "renamingGuidance": "Rename to 'rootDirectory', 'desiredEncoding', 'normalizedFiles'. Rename methods to 'DiscoverSourceFiles', 'InspectEncoding', 'ApplyNormalization', 'MakeAbsolute'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/BuildLogCollector.cs",
+        "className": "BuildLogCollector",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Diagnostics/DiagnosticReportAggregator.cs",
+        "className": "DiagnosticReportAggregator",
+        "namespace": "SdkTasks.Diagnostics",
+        "category": "Diagnostics"
+      },
+      "violationType": "Uses Path.GetFullPath for report path, Environment.MachineName and Environment.GetEnvironmentVariable for report metadata, File.AppendAllText for incremental report writing",
+      "renamingGuidance": "Rename to 'sourceDirectories', 'reportDestination', 'diagnosticEntry'. Rename methods to 'ExtractDiagnostics', 'ComputeFileAge', 'EmitReportHeader'."
+    },
+    {
+      "original": {
+        "file": "MismatchViolations/AssemblyVersionPatcher.cs",
+        "className": "AssemblyVersionPatcher",
+        "namespace": "UnsafeThreadSafeTasks.MismatchViolations",
+        "category": "MismatchViolations"
+      },
+      "disguised": {
+        "file": "Versioning/VersionMetadataUpdater.cs",
+        "className": "VersionMetadataUpdater",
+        "namespace": "SdkTasks.Versioning",
+        "category": "Versioning"
+      },
+      "violationType": "Execute() correctly uses TaskEnvironment but helper methods use Path.GetFullPath and Environment.GetEnvironmentVariable, creating a mismatch pattern",
+      "renamingGuidance": "Rename to 'targetFiles', 'buildLabel', 'preservationDirectory'. Rename methods to 'BackupOriginalVersion', 'LoadFileContent', 'ComposeVersionString'."
+    },
+    {
+      "original": {
+        "file": "ComplexViolations/ProjectDependencyGraphBuilder.cs",
+        "className": "ProjectDependencyGraphBuilder",
+        "namespace": "UnsafeThreadSafeTasks.ComplexViolations",
+        "category": "ComplexViolations"
+      },
+      "disguised": {
+        "file": "Analysis/DependencyTopologyAnalyzer.cs",
+        "className": "DependencyTopologyAnalyzer",
+        "namespace": "SdkTasks.Analysis",
+        "category": "Analysis"
+      },
+      "violationType": "Uses Environment.CurrentDirectory as fallback root, Path.GetFullPath for project discovery and reference resolution, File.ReadAllText for project parsing",
+      "renamingGuidance": "Rename to 'scanRootDirectory', 'adjacencyMap', 'discoveredProjects'. Rename methods to 'DiscoverProjectFiles', 'ExtractProjectReferences', 'PerformTopologicalSort'."
+    },
+    {
+      "original": {
+        "file": "ProcessViolations/OutputCleanManager.cs",
+        "className": "OutputCleanManager",
+        "namespace": "UnsafeThreadSafeTasks.ProcessViolations",
+        "category": "ProcessViolations"
+      },
+      "disguised": {
+        "file": "Cleanup/BuildOutputSanitizer.cs",
+        "className": "BuildOutputSanitizer",
+        "namespace": "SdkTasks.Cleanup",
+        "category": "Cleanup"
+      },
+      "violationType": "Uses Path.GetFullPath for directory resolution and creates ProcessStartInfo directly for handle.exe and cmd.exe instead of TaskEnvironment.GetProcessStartInfo()",
+      "renamingGuidance": "Rename to 'targetDirectories', 'retainPatterns', 'aggressiveClean'. Rename methods to 'SanitizeDirectory', 'AttemptRemoval', 'InspectFileLock', 'ForceRemoval'."
     }
   ]
 }
