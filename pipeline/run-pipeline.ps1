@@ -589,8 +589,11 @@ Rules:
 
     # Verify build
     Write-Host "  Verifying test project builds..." -ForegroundColor Gray
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     $buildOutput = & dotnet build "$testsProject\SdkTasks.Tests.csproj" --verbosity quiet 2>&1
     $buildExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEAP
     if ($buildExit -ne 0) {
         Write-Host "  Test project build FAILED" -ForegroundColor Red
         $buildOutput | Where-Object { $_ -match "error" } | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
@@ -770,7 +773,10 @@ function Invoke-Phase4 {
 
     Write-Host "  $(Get-Date -Format 'HH:mm:ss') Running full test suite..." -ForegroundColor Yellow
     $trxFileName = "test-results.trx"
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     & dotnet test $testsProject --logger "trx;LogFileName=$trxFileName" --results-directory $iterLogDir --verbosity quiet 2>&1 | Out-Null
+    $ErrorActionPreference = $prevEAP
     $trxPath = Join-Path $iterLogDir $trxFileName
 
     $results = Parse-TestResults -TrxPath $trxPath
