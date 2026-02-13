@@ -242,28 +242,42 @@ function Invoke-WorkerPool {
         [array]$TaskQueue,
         [scriptblock]$PromptBuilder,
         [int]$Workers = $script:Parallelism,
-        [int]$PollIntervalSec = 5
+        [int]$PollIntervalSec = 5,
+        [int]$MaxRetries = 2
     )
 
     $results = [System.Collections.ArrayList]::new()
     $running = [System.Collections.ArrayList]::new()
+    $retryQueue = [System.Collections.Queue]::new()
+    $retryCounts = @{}
     $queueIndex = 0
     $total = $TaskQueue.Count
 
-    Write-Host "  Worker pool: $total tasks, $Workers concurrent agents" -ForegroundColor Yellow
+    Write-Host "  Worker pool: $total tasks, $Workers concurrent agents, max $MaxRetries retries" -ForegroundColor Yellow
 
-    while ($queueIndex -lt $total -or $running.Count -gt 0) {
-        # Fill empty worker slots from the queue
-        while ($running.Count -lt $Workers -and $queueIndex -lt $total) {
-            $task = $TaskQueue[$queueIndex]
-            $queueIndex++
+    while ($queueIndex -lt $total -or $running.Count -gt 0 -or $retryQueue.Count -gt 0) {
+        # Fill empty worker slots — retries first, then fresh tasks
+        while ($running.Count -lt $Workers -and ($retryQueue.Count -gt 0 -or $queueIndex -lt $total)) {
+            $task = $null
+            $isRetry = $false
+            if ($retryQueue.Count -gt 0) {
+                $task = $retryQueue.Dequeue()
+                $isRetry = $true
+            } elseif ($queueIndex -lt $total) {
+                $task = $TaskQueue[$queueIndex]
+                $queueIndex++
+            }
+            if ($null -eq $task) { break }
+
             $params = & $PromptBuilder $task
             $job = Invoke-CopilotAgentAsync -Prompt $params.Prompt -WorkingDir $params.WorkingDir `
                 -LogFile $params.LogFile -Label $params.Label -ExtraDirs $params.ExtraDirs
             $job.TaskData = $task
-            $job.Index = $queueIndex
+            $job.Index = if ($isRetry) { $task._OrigIndex } else { $queueIndex }
             $running.Add($job) | Out-Null
-            Write-Host "  [$(Get-Date -Format 'HH:mm:ss')] Started [$queueIndex/$total] $($params.Label)" -ForegroundColor DarkGray
+
+            $retryTag = if ($isRetry) { " (retry $($retryCounts[$params.Label]))" } else { "" }
+            Write-Host "  [$(Get-Date -Format 'HH:mm:ss')] Started [$($job.Index)/$total] $($params.Label)$retryTag" -ForegroundColor DarkGray
         }
 
         # Check for completed jobs
@@ -273,12 +287,29 @@ function Invoke-WorkerPool {
             $result = Complete-AgentJob -Job $job
             $result.TaskData = $job.TaskData
             $result.Index = $job.Index
-            $results.Add($result) | Out-Null
 
+            if ($result.ExitCode -ne 0) {
+                $label = $result.Label
+                if (-not $retryCounts.ContainsKey($label)) { $retryCounts[$label] = 0 }
+                $retryCounts[$label]++
+
+                if ($retryCounts[$label] -le $MaxRetries) {
+                    # Re-queue for retry
+                    $retryTask = $job.TaskData
+                    $retryTask | Add-Member -NotePropertyName '_OrigIndex' -NotePropertyValue $job.Index -Force
+                    $retryQueue.Enqueue($retryTask)
+                    $retried = $retryCounts[$label]
+                    Write-Host "  [$(Get-Date -Format 'HH:mm:ss')][$label] FAIL → retry $retried/$MaxRetries ($('{0:mm\:ss}' -f $result.Duration))" -ForegroundColor Yellow
+                    continue
+                }
+            }
+
+            $results.Add($result) | Out-Null
             $doneCount = $results.Count
             $status = if ($result.ExitCode -eq 0) { "OK" } else { "FAIL (exit $($result.ExitCode))" }
             $color = if ($result.ExitCode -eq 0) { "Green" } else { "Red" }
-            Write-Host "  [$(Get-Date -Format 'HH:mm:ss')][$($result.Label)] $status ($('{0:mm\:ss}' -f $result.Duration)) [$doneCount/$total done, $($running.Count) active]" -ForegroundColor $color
+            $retryNote = if ($retryCounts.ContainsKey($result.Label) -and $retryCounts[$result.Label] -gt 0) { " [after $($retryCounts[$result.Label]) retries]" } else { "" }
+            Write-Host "  [$(Get-Date -Format 'HH:mm:ss')][$($result.Label)] $status ($('{0:mm\:ss}' -f $result.Duration)) [$doneCount/$total done, $($running.Count) active]$retryNote" -ForegroundColor $color
         }
 
         if ($running.Count -gt 0) {
