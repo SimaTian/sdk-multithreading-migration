@@ -61,21 +61,7 @@ Replace forbidden APIs **directly** — do NOT null-check `TaskEnvironment`. MSB
 - `new FileStream(path, ...)` → absolutize `path` first
 - `XDocument.Load(path)` / `.Save(path)` → absolutize `path` first
 
-**CRITICAL: Always add defensive ProjectDirectory initialization at the start of Execute/ExecuteCore:**
-```csharp
-// Add this BEFORE any path resolution in Execute()/ExecuteCore():
-if (string.IsNullOrEmpty(TaskEnvironment.ProjectDirectory) && BuildEngine != null)
-{
-    string projectFile = BuildEngine.ProjectFileOfTaskNode;
-    if (!string.IsNullOrEmpty(projectFile))
-    {
-        TaskEnvironment.ProjectDirectory =
-            Path.GetDirectoryName(Path.GetFullPath(projectFile)) ?? string.Empty;
-    }
-}
-```
-
-**Why**: When `TaskEnvironment.ProjectDirectory` is empty (its default), `TaskEnvironment.GetAbsolutePath(relativePath)` returns `Path.Combine("", relativePath)` which is just `relativePath` — still relative. File operations then resolve against the process CWD, breaking thread safety. Auto-initializing from `BuildEngine.ProjectFileOfTaskNode` (which is always an absolute path in real MSBuild) ensures correct project-relative resolution. Tests that don't explicitly set `TaskEnvironment` depend on this fallback.
+**Do NOT add defensive `ProjectDirectory` self-initialization code** (e.g., reading `BuildEngine.ProjectFileOfTaskNode`). MSBuild creates a fully initialized `TaskEnvironment` — with `ProjectDirectory` already set — and assigns it via the property setter before `Execute()` is called. The task only needs `public TaskEnvironment TaskEnvironment { get; set; }`. For tests, use `TaskEnvironmentHelper.CreateForTest(projectDir)`.
 
 Store absolutized path in a local variable for reuse:
 ```csharp
@@ -156,7 +142,7 @@ public class PathNormalizer : Microsoft.Build.Utilities.Task
 [MSBuildMultiThreadableTask]
 public class PathNormalizer : Microsoft.Build.Utilities.Task, IMultiThreadableTask
 {
-    public TaskEnvironment TaskEnvironment { get; set; } = new();
+    public TaskEnvironment TaskEnvironment { get; set; }
     public string InputPath { get; set; } = string.Empty;
 
     public override bool Execute()
@@ -167,18 +153,8 @@ public class PathNormalizer : Microsoft.Build.Utilities.Task, IMultiThreadableTa
             return false;
         }
 
-        // CRITICAL: Auto-initialize ProjectDirectory from BuildEngine when not set
-        if (string.IsNullOrEmpty(TaskEnvironment.ProjectDirectory) && BuildEngine != null)
-        {
-            string projectFile = BuildEngine.ProjectFileOfTaskNode;
-            if (!string.IsNullOrEmpty(projectFile))
-            {
-                TaskEnvironment.ProjectDirectory =
-                    Path.GetDirectoryName(Path.GetFullPath(projectFile)) ?? string.Empty;
-            }
-        }
-
         // FIXED: Use TaskEnvironment.GetAbsolutePath instead of Path.GetFullPath
+        // MSBuild sets TaskEnvironment (with ProjectDirectory) before calling Execute()
         string resolvedPath = TaskEnvironment.GetAbsolutePath(InputPath);
         Log.LogMessage(MessageImportance.Normal, $"Resolved path: {resolvedPath}");
         if (File.Exists(resolvedPath))
@@ -192,8 +168,7 @@ public class PathNormalizer : Microsoft.Build.Utilities.Task, IMultiThreadableTa
 
 ### Key differences:
 1. Added `IMultiThreadableTask` interface
-2. Added `TaskEnvironment` property with default initializer
-3. Added `ProjectDirectory` auto-initialization from `BuildEngine.ProjectFileOfTaskNode` — **this is the commonly missed step**
-4. Replaced `Path.GetFullPath(InputPath)` → `TaskEnvironment.GetAbsolutePath(InputPath)`
+2. Added `TaskEnvironment` property (simple auto-property — MSBuild sets it before `Execute()`)
+3. Replaced `Path.GetFullPath(InputPath)` → `TaskEnvironment.GetAbsolutePath(InputPath)`
 
-**Common mistake**: Replacing `Path.GetFullPath` with `TaskEnvironment.GetAbsolutePath` WITHOUT adding the `ProjectDirectory` auto-initialization. When `ProjectDirectory` is empty (default), `GetAbsolutePath` effectively returns the path unchanged, making the migration a no-op that still resolves against CWD.
+**Do NOT add `ProjectDirectory` self-initialization code** (reading `BuildEngine.ProjectFileOfTaskNode` to set `TaskEnvironment.ProjectDirectory`). MSBuild handles this automatically by providing a fully initialized `TaskEnvironment` to all `IMultiThreadableTask` implementations before `Execute()` is called. For unit tests, use `TaskEnvironmentHelper.CreateForTest(projectDir)` to set it manually.

@@ -28,24 +28,16 @@ private string GetAbsolutePathFromProjectRelativePath(string path)
 
 **Tests must always set `TaskEnvironment`** — use `TaskEnvironmentHelper.CreateForTest(projectDir)` for every test of a migrated task.
 
-### 1b. Defensive ProjectDirectory initialization from BuildEngine
+### ~~1b. Defensive ProjectDirectory initialization from BuildEngine~~ — NOT NEEDED
 
-Always add `TaskEnvironment.ProjectDirectory` auto-initialization from `BuildEngine.ProjectFileOfTaskNode` at the start of `Execute()` when `ProjectDirectory` is empty. This ensures the task resolves relative paths correctly even when `TaskEnvironment` is not explicitly configured by the caller (e.g., in test harnesses that only set `BuildEngine`):
+~~Always add `TaskEnvironment.ProjectDirectory` auto-initialization from `BuildEngine.ProjectFileOfTaskNode`.~~
 
+**CORRECTION**: This guidance was wrong. MSBuild handles `TaskEnvironment` initialization automatically. When MSBuild detects that a task implements `IMultiThreadableTask`, it creates a fully initialized `TaskEnvironment` (with `ProjectDirectory` set from the project file) and assigns it via the property setter before calling `Execute()`. The task only needs `public TaskEnvironment TaskEnvironment { get; set; }` — no self-initialization code. This is confirmed by all Group 1–4 tasks which use simple auto-properties.
+
+For **unit tests**, you must set `TaskEnvironment` manually since MSBuild is not involved:
 ```csharp
-// At the start of Execute()/ExecuteCore():
-if (string.IsNullOrEmpty(TaskEnvironment.ProjectDirectory) && BuildEngine != null)
-{
-    string projectFile = BuildEngine.ProjectFileOfTaskNode;
-    if (!string.IsNullOrEmpty(projectFile))
-    {
-        TaskEnvironment.ProjectDirectory =
-            Path.GetDirectoryName(Path.GetFullPath(projectFile)) ?? string.Empty;
-    }
-}
+task.TaskEnvironment = TaskEnvironmentHelper.CreateForTest(projectDir);
 ```
-
-Without this, `TaskEnvironment.GetAbsolutePath(relativePath)` with empty `ProjectDirectory` returns `Path.Combine("", relativePath)` = `relativePath` (still relative), causing file operations to resolve against CWD rather than the project directory.
 
 ### 2. Absolute paths pass through GetAbsolutePath unchanged
 
