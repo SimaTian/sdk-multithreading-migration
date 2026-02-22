@@ -163,6 +163,16 @@ This is confirmed by all Groups 1–4 tasks (GenerateDepsFile, GenerateBundle, R
 - `Process.GetCurrentProcess().Kill()`
 - `Console.*`
 
+### Transitive Violations (External Library Calls)
+Forbidden API usage can hide inside external library methods that the task calls. These are the hardest violations to detect because they don't appear in the task's source code — the library internally calls `Environment.GetEnvironmentVariable()`, `Path.GetFullPath()`, `Directory.Exists()`, etc. without any knowledge of `TaskEnvironment`.
+
+**During analysis, for every non-trivial external method call, ask: does this library method internally access environment variables, the filesystem, or the CWD?** If yes, it's a transitive violation.
+
+Known examples:
+- `DotNetReferenceAssembliesPathResolver.Resolve()` (`Microsoft.Extensions.DependencyModel`) — reads `DOTNET_REFERENCE_ASSEMBLIES_PATH` via `Environment.GetEnvironmentVariable()` and probes directories with `Directory.Exists()`, all bypassing `TaskEnvironment`
+
+**Fix**: Replace the library call with inline code that uses `TaskEnvironment`, or document it as a known limitation with a TODO comment linking to the library source.
+
 ## Testing Requirements
 
 ### Thread-Safety Test Pattern

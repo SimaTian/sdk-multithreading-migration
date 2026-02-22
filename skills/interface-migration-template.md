@@ -25,6 +25,7 @@ Read the task source file and identify ALL forbidden API usage:
 - `Environment.CurrentDirectory`
 - `new ProcessStartInfo(...)` / `Process.Start(...)`
 - Trace every path string variable through ALL method calls (including helpers/utilities)
+- **Check external library method calls for transitive forbidden API usage** — if the task calls a method from a NuGet package, inspect what it does internally. Library methods that call `Environment.GetEnvironmentVariable()`, `Path.GetFullPath()`, or `Directory.Exists()` bypass `TaskEnvironment` entirely. Example: `DotNetReferenceAssembliesPathResolver.Resolve()` from `Microsoft.Extensions.DependencyModel` internally reads env vars and probes directories without `TaskEnvironment`.
 
 ### Step 3: Write Failing Tests FIRST (before any code changes)
 Create a test file `GivenATheTaskMultiThreading.cs` in the UnitTests project.

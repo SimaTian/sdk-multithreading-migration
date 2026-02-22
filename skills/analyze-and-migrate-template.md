@@ -52,6 +52,13 @@ Search the task code for ALL of these patterns:
 
 Also trace path strings through helper method calls — a path might flow into a helper that internally uses File APIs.
 
+**CRITICAL: Check for transitive forbidden API usage through external library calls.** If the task calls a method from a NuGet package or external library, inspect what that method does internally. Library methods that call `Environment.GetEnvironmentVariable()`, `Path.GetFullPath()`, `File.*`, or other forbidden APIs bypass `TaskEnvironment` entirely — the library has no knowledge of it. These are the hardest violations to catch because they don't appear in the task's own source code.
+
+Known examples:
+- `DotNetReferenceAssembliesPathResolver.Resolve()` (from `Microsoft.Extensions.DependencyModel`) — internally calls `Environment.GetEnvironmentVariable("DOTNET_REFERENCE_ASSEMBLIES_PATH")` and `Directory.Exists()` on hardcoded paths, bypassing `TaskEnvironment`.
+
+**Remediation**: Replace the library call with inline code that routes through `TaskEnvironment`. For env var reads, use `taskEnvironment.GetEnvironmentVariable(...)`. For directory probes, absolutize paths first. If the library method is complex, document it as a known limitation with a TODO comment linking to the library source.
+
 ### Step 3: Write Failing Tests FIRST (before any task code changes)
 Create test file in `src/Tasks/Microsoft.NET.Build.Tasks.UnitTests/`.
 
