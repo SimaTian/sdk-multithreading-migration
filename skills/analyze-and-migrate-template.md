@@ -6,7 +6,7 @@ Use this template when migrating a task that MAY or MAY NOT use forbidden APIs. 
 ## Core Principle: Tests First, Migration Second
 
 **Every migration follows this strict order:**
-1. Analyze the task → 2. Write failing tests → 3. Verify tests FAIL → 4. Migrate the code → 5. Verify tests PASS → 6. Verify no regressions
+1. Analyze the task → 2. Write behavioral tests → 3. Apply stub migration (attribute + interface + property only) → 4. Verify tests FAIL for behavioral reasons → 5. Complete the migration (absolutize paths) → 6. Verify tests PASS → 7. Verify no regressions
 
 ## Test Design Rules
 
@@ -27,6 +27,8 @@ Use this template when migrating a task that MAY or MAY NOT use forbidden APIs. 
 4. **Local stress testing (not committed)**: Run concurrent execution tests locally during migration to verify thread safety, but do NOT include stress tests in the final committed test suite. These are exploratory validation only.
 
 5. **Preserve all public properties**: Every public property on the original task (Input, Output, or plain) must exist on the migrated task. Dropping, renaming, or changing the type of any public property is a migration error.
+
+6. **Output properties must preserve input form (relative stays relative)**: The migration absolutizes paths *internally* for correct file I/O, but Output properties exposed to MSBuild consumers must preserve the original form of the input. If a task's Output is derived from its Input items (e.g., `ExcludedFiles` is a subset of `FilesToBundle`), and those inputs were relative paths, the outputs must remain relative — NOT absolutized. Test this by providing relative input paths and asserting the Output property values are still relative after execution. This prevents breaking downstream MSBuild targets that depend on the original path form.
 
 ## Process
 
@@ -62,54 +64,75 @@ Known examples:
 ### Step 3: Write Failing Tests FIRST (before any task code changes)
 Create test file in `src/Tasks/Microsoft.NET.Build.Tasks.UnitTests/`.
 
+**IMPORTANT: Do NOT write tests for attribute or interface presence** (e.g., `BeDecoratedWith<MSBuildMultiThreadableTaskAttribute>()` or `BeAssignableTo<IMultiThreadableTask>()`). These are redundant noise — they verify decoration, not correctness. Focus **all** test effort on behavioral tests.
+
 **For attribute-only tasks** (no forbidden APIs found):
-```csharp
-[Fact]
-public void ItHasMultiThreadableAttribute()
-{
-    typeof(TheTask).Should().BeDecoratedWith<MSBuildMultiThreadableTaskAttribute>();
-}
-```
-This test FAILS because the attribute hasn't been added yet.
+Write a behavioral smoke test that constructs the task with `TaskEnvironment`, runs it with minimal/empty inputs, and asserts it completes without unexpected errors.
 
 **For interface-based tasks** (forbidden APIs found):
-Write interface check, attribute check, AND path-resolution tests per interface-migration-template.md. All will FAIL against unmigrated code.
+Write path-resolution, multi-process/multi-threaded parity, and output-relativity tests per interface-migration-template.md.
 
-### Step 4: Verify Tests FAIL
-```bash
-dotnet test src/Tasks/Microsoft.NET.Build.Tasks.UnitTests/Microsoft.NET.Build.Tasks.UnitTests.csproj --filter "FullyQualifiedName~TheTaskMultiThreading"
-```
-**All new tests MUST fail.** If any pass, the test is not validating the migration — fix the test.
+### Step 4: Apply Stub Migration
+Add the attribute, interface, and `TaskEnvironment` property — but do NOT change any logic. The task code still uses its original path resolution (e.g., raw `Path.GetFullPath()` or passing relative paths to libraries). This makes the tests compile and run.
 
-### Step 5: Apply the Migration
-
-**If NO forbidden APIs → Attribute-Only:**
+**For attribute-only tasks:**
 ```csharp
 [MSBuildMultiThreadableTask]
-public class TheTask : TaskBase  // NO IMultiThreadableTask needed
+public class TheTask : TaskBase
 {
     // ... unchanged code ...
 }
 ```
 
-**If forbidden APIs found → Interface-Based:**
+**For interface-based tasks:**
+
+**IMPORTANT — `TaskEnvironment` property declaration must be dual-targeted.** The SDK tasks build for both `net11.0` and `net472`. On .NET (non-NETFRAMEWORK), nullable analysis requires `= null!` since MSBuild sets the property before `Execute()`. On NETFRAMEWORK, use a backing field with `TaskEnvironmentDefaults.Create()` fallback:
+
 ```csharp
 [MSBuildMultiThreadableTask]
 public class TheTask : TaskBase, IMultiThreadableTask
 {
-    public TaskEnvironment TaskEnvironment { get; set; }
-    // ... modify code to use TaskEnvironment ...
+#if NETFRAMEWORK
+    private TaskEnvironment _taskEnvironment;
+    public TaskEnvironment TaskEnvironment
+    {
+        get => _taskEnvironment ??= TaskEnvironmentDefaults.Create();
+        set => _taskEnvironment = value;
+    }
+#else
+    public TaskEnvironment TaskEnvironment { get; set; } = null!;
+#endif
+    // ... NO other changes — code still uses original path resolution ...
 }
 ```
+
+### Step 5: Verify Tests FAIL for Behavioral Reasons
+```bash
+dotnet test src/Tasks/Microsoft.NET.Build.Tasks.UnitTests/Microsoft.NET.Build.Tasks.UnitTests.csproj --filter "FullyQualifiedName~TheTaskMultiThreading"
+```
+**ALL tests MUST compile and run, but FAIL.** A test that passes against a stub-migrated task is a no-op — it does not validate the migration and must be redesigned. Go through each test individually:
+
+**Critical design rule: every test must set CWD to a decoy directory.** The stub migration adds a `TaskEnvironment` property but doesn't use it — the task still resolves paths against the process CWD. Tests that leave CWD at its default (or set it to the projectDir) will pass even with the stub, because CWD-based resolution happens to find the files. To catch this:
+- Create files **only** under `projectDir`
+- Set CWD to a **different, empty** `decoyDir` before running the task
+- The task receives `TaskEnvironment.CreateForTest(projectDir)` — if it uses TaskEnvironment, it finds files; if it uses CWD, it gets `FileNotFoundException`/`DirectoryNotFoundException`
+
+**How each test type should fail against the stub:**
+1. **Parity test** — Runs once with CWD==projectDir, once with CWD==otherDir. With the stub, the first run finds files (CWD matches), the second doesn't → different exception types/messages → assertion fails.
+2. **Output-relativity test** — Sets CWD to decoyDir. With the stub, task can't find files via CWD → throws `FileNotFoundException` → test asserts this is NOT a file-not-found error.
+3. **Concurrent execution test** — Sets CWD to a shared decoyDir. Each thread has its own projectDir with files. With the stub, all threads resolve via shared CWD (decoyDir) instead of their own TaskEnvironment → `FileNotFoundException`/`DirectoryNotFoundException` → test asserts no file-not-found exceptions.
+
+### Step 6: Complete the Migration
+Now apply the actual path absolutization changes.
 Follow the interface-migration-template.md skill for detailed replacement steps.
 
-### Step 6: Verify Tests PASS
+### Step 7: Verify Tests PASS
 ```bash
 dotnet test src/Tasks/Microsoft.NET.Build.Tasks.UnitTests/Microsoft.NET.Build.Tasks.UnitTests.csproj --filter "FullyQualifiedName~TheTaskMultiThreading"
 ```
 **All new tests MUST pass now.**
 
-### Step 7: Verify No Regressions
+### Step 8: Verify No Regressions
 ```bash
 dotnet test src/Tasks/Microsoft.NET.Build.Tasks.UnitTests/Microsoft.NET.Build.Tasks.UnitTests.csproj
 ```
