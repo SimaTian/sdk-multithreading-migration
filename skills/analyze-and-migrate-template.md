@@ -61,6 +61,8 @@ Known examples:
 
 **Remediation**: Replace the library call with inline code that routes through `TaskEnvironment`. For env var reads, use `taskEnvironment.GetEnvironmentVariable(...)`. For directory probes, absolutize paths first. If the library method is complex, document it as a known limitation with a TODO comment linking to the library source.
 
+**Step 2b: Verify injection completeness.** If the task (or any helper class it uses) was refactored to accept an injected delegate (e.g., `Func<string, string?>` for env vars), verify that ALL code paths in that class use the delegate. Search for any remaining direct calls to `Environment.GetEnvironmentVariable`, `Path.GetFullPath`, or library methods that internally call these. A class that accepts an injection delegate but still has static bypasses is worse than no refactoring — it gives false confidence that all reads are routed when they're not. Treat leaked static calls as bugs, not TODOs.
+
 ### Step 3: Write Failing Tests FIRST (before any task code changes)
 Create test file in `src/Tasks/Microsoft.NET.Build.Tasks.UnitTests/`.
 

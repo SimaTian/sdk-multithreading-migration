@@ -252,6 +252,7 @@ Run this checklist before pushing any merge group fix:
 - [ ] **Cross-platform path assertions** — use `[WindowsOnlyFact]` for backslash tests
 - [ ] **Explanatory comments** on properties that are intentionally NOT absolutized
 - [ ] **`UseShellExecute = false`** in any `ProcessStartInfo` under NETFRAMEWORK
+- [ ] **Injection completeness verified** — if any class was refactored to accept delegates/interfaces, verify every method uses them (no leaked static calls to `Environment.*`, no library bypasses like `DotNetReferenceAssembliesPathResolver.Resolve()`)
 
 ---
 
@@ -264,9 +265,11 @@ internally calls `Environment.GetEnvironmentVariable("DOTNET_REFERENCE_ASSEMBLIE
 This bypasses `TaskEnvironment` entirely.
 
 **Remediation options**:
-1. Inline the library method's logic using `taskEnvironment.GetEnvironmentVariable(...)` — preferred if simple
-2. Document as known limitation with `// TODO: pre-existing issue — library bypasses TaskEnvironment`
+1. Inline the library method's logic using `taskEnvironment.GetEnvironmentVariable(...)` — **preferred and required when the delegate was specifically introduced to replace the static call**
+2. Document as known limitation with `// TODO: pre-existing issue — library bypasses TaskEnvironment` — only acceptable when inlining is complex and the env var is unlikely to differ per-task
 3. Do NOT modify the runtime library — that's a different repo's concern
+
+**Severity upgrade**: When a class was refactored to accept an injected delegate specifically to replace a static API, and a method in that class still calls the old static API, this is a **bug** — not a TODO. The refactoring claim is that all reads go through the delegate. A leaked static call violates that claim. Fix before merge.
 
 **Per SimaTian's observation**: Automated agents consistently miss transitive violations through external calls.
 Manual review of every external method invocation in migrated code is required.

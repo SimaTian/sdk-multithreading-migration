@@ -173,6 +173,20 @@ Known examples:
 
 **Fix**: Replace the library call with inline code that uses `TaskEnvironment`, or document it as a known limitation with a TODO comment linking to the library source.
 
+### Injection Completeness Audit
+
+When a class is refactored from static to instance-based with delegate/interface injection (e.g., accepting `Func<string, string?>` for env var reads), **every** internal code path must use the injected dependency. A single leaked static call defeats the entire refactoring.
+
+**Mandatory verification step after any injection refactoring:**
+1. List ALL methods in the refactored class
+2. For each method, trace every env var read, filesystem access, and path resolution
+3. Verify EACH one goes through the injected delegate/TaskEnvironment — including calls to external library methods that internally read env vars or access the filesystem
+4. A leaked static call is a **bug**, not a TODO — it must be fixed before merge
+
+**Pattern to detect**: Class constructor accepts `Func<string, string?>` but a method still calls `SomeLibrary.Resolve()` which internally uses `Environment.GetEnvironmentVariable()`. The constructor injection gives false confidence that all reads are routed, when in fact they're not.
+
+**Real example**: `FrameworkReferenceResolver` was refactored to accept `Func<string, string>` for env var injection. The `ProgramFiles` reads correctly used the delegate, but line 22 still called `DotNetReferenceAssembliesPathResolver.Resolve()` — a static library method that uses process-global `Environment.GetEnvironmentVariable("DOTNET_REFERENCE_ASSEMBLIES_PATH")`, completely bypassing the delegate. This shipped through multiple review rounds because the class *looked* correctly refactored at the API surface.
+
 ## Testing Requirements
 
 ### Thread-Safety Test Pattern
