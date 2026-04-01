@@ -102,6 +102,53 @@ public class MyTask : TaskBase, IMultiThreadableTask
 }
 ```
 
+### AbsolutePath Usage Pattern
+
+**Key rule**: Absolutize at the point of file I/O, not at the call site. Keep `AbsolutePath` objects — don't cast to string early.
+
+```csharp
+// ✅ DO: Absolutize inside the method that performs file I/O
+private void WriteOutput(string depsFilePath, string projectPath)
+{
+    AbsolutePath absDepsFilePath = TaskEnvironment.GetAbsolutePath(depsFilePath);
+    AbsolutePath absProjectPath = TaskEnvironment.GetAbsolutePath(projectPath);
+    
+    // Use .Value for file I/O
+    using var stream = File.Create(absDepsFilePath.Value);
+    var info = SingleProjectInfo.Create(absProjectPath.Value, ...);
+    
+    // Use original property for output metadata (preserves relative form)
+    _filesWritten.Add(new TaskItem(DepsFilePath));
+}
+
+// ❌ DON'T: Cast AbsolutePath to string in ExecuteCore, losing OriginalValue
+protected override void ExecuteCore()
+{
+    string absPath = (string)TaskEnvironment.GetAbsolutePath(SomePath); // WRONG: loses OriginalValue
+    DoWork(absPath);
+}
+
+// ❌ DON'T: Use absolutized paths in output metadata
+appHostItem.SetMetadata(MetadataKeys.PackageDirectory, absolutizedPath); // WRONG: changes output form
+
+// ✅ DO: Use absolute path for file I/O, original for output
+if (Directory.Exists(absolutizedPath.Value))  // I/O: use .Value
+{
+    string originalPath = Path.Combine(TargetingPackRoot, ...);  // Output: use original property
+    item.SetMetadata(MetadataKeys.PackageDirectory, originalPath);
+}
+```
+
+**When to use `AbsolutePath.Value`**: File.Create, File.Exists, Directory.Exists, new FileStream, GetRuntimeGraph, GetLockFile — anything touching the filesystem.
+
+**When to use `AbsolutePath.OriginalValue` (or the original property)**: Output metadata, FilesWritten, task Output properties — anything exposed to downstream MSBuild targets.
+
+**When to use nullable**: `AbsolutePath?` for optional paths that may be null/empty:
+```csharp
+AbsolutePath? absPath = !string.IsNullOrEmpty(path) ? TaskEnvironment.GetAbsolutePath(path) : null;
+if (absPath.HasValue) { File.Exists(absPath.Value.Value); }
+```
+
 **Important**: Do NOT null-check `TaskEnvironment`. MSBuild always provides a `TaskEnvironment` instance to tasks implementing `IMultiThreadableTask` — even in single-threaded mode (where it acts as a no-op passthrough). Use `TaskEnvironment` directly.
 
 **Important**: Do NOT add defensive `ProjectDirectory` self-initialization code in the task. MSBuild sets `TaskEnvironment` (including `ProjectDirectory`) via the property setter before calling `Execute()`. The task only needs the simple auto-property `public TaskEnvironment TaskEnvironment { get; set; }`. For unit tests, use `TaskEnvironmentHelper.CreateForTest(projectDir)` to provide a properly initialized `TaskEnvironment` manually. See "TaskEnvironment Lifecycle" section below.

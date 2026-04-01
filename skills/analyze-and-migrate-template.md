@@ -30,6 +30,8 @@ Use this template when migrating a task that MAY or MAY NOT use forbidden APIs. 
 
 6. **Output properties must preserve input form (relative stays relative)**: The migration absolutizes paths *internally* for correct file I/O, but Output properties exposed to MSBuild consumers must preserve the original form of the input. If a task's Output is derived from its Input items (e.g., `ExcludedFiles` is a subset of `FilesToBundle`), and those inputs were relative paths, the outputs must remain relative — NOT absolutized. Test this by providing relative input paths and asserting the Output property values are still relative after execution. This prevents breaking downstream MSBuild targets that depend on the original path form.
 
+   **Concrete pattern**: Keep `AbsolutePath` objects internally — don't cast to `string` at the point of creation. Use `.Value` only for file I/O operations (File.Create, Directory.Exists, etc.). For task outputs and metadata, use the original property value or `AbsolutePath.OriginalValue`. Casting `(string)TaskEnvironment.GetAbsolutePath(...)` immediately in `ExecuteCore()` discards the type safety — absolutize inside the method that actually performs I/O instead.
+
 ## Process
 
 ### Step 1: Clone & Read
@@ -62,6 +64,11 @@ Known examples:
 **Remediation**: Replace the library call with inline code that routes through `TaskEnvironment`. For env var reads, use `taskEnvironment.GetEnvironmentVariable(...)`. For directory probes, absolutize paths first. If the library method is complex, document it as a known limitation with a TODO comment linking to the library source.
 
 **Step 2b: Verify injection completeness.** If the task (or any helper class it uses) was refactored to accept an injected delegate (e.g., `Func<string, string?>` for env vars), verify that ALL code paths in that class use the delegate. Search for any remaining direct calls to `Environment.GetEnvironmentVariable`, `Path.GetFullPath`, or library methods that internally call these. A class that accepts an injection delegate but still has static bypasses is worse than no refactoring — it gives false confidence that all reads are routed when they're not. Treat leaked static calls as bugs, not TODOs.
+
+**Step 2c: Trace absolutized paths — I/O vs outputs.** For every path that gets absolutized via `TaskEnvironment.GetAbsolutePath()`, trace where it flows:
+- **File I/O** (File.Create, Directory.Exists, GetRuntimeGraph, LockFileCache) → must use absolute path → use `AbsolutePath.Value`
+- **Task outputs** (Output properties, SetMetadata, FilesWritten) → must preserve original form → use original property or `AbsolutePath.OriginalValue`
+- If an absolutized path flows to both, you need two versions: absolute for I/O, original for output. Don't cast `AbsolutePath` to `string` at creation — that discards `OriginalValue` via implicit conversion.
 
 ### Step 3: Write Failing Tests FIRST (before any task code changes)
 Create test file in `src/Tasks/Microsoft.NET.Build.Tasks.UnitTests/`.

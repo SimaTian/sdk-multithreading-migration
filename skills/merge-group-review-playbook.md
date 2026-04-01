@@ -129,6 +129,23 @@ the `TaskEnvironment` property before assigning it.
 
 ---
 
+### 1.6 Absolutization Leak to Outputs
+
+**Symptom**: Task output metadata (SetMetadata, FilesWritten, Output properties) contains absolutized paths instead of preserving the original input form. Behavioral change — downstream MSBuild targets that depend on relative paths break.
+
+**Root cause**: Casting `AbsolutePath` to `string` in `ExecuteCore()` (via `(string)TaskEnvironment.GetAbsolutePath(...)` or implicit conversion), then passing the string to both file I/O and output metadata. The cast loses `OriginalValue`.
+
+**Fix**: 
+1. Move absolutization inside the method performing file I/O (not ExecuteCore)
+2. Keep `AbsolutePath` objects — use `.Value` for file I/O, original property for outputs
+3. For fields that serve dual purpose (I/O + output), use `AbsolutePath?` type and compute original-form outputs from the original property
+
+**Detection**: Search for `(string)TaskEnvironment.GetAbsolutePath` or `string x = TaskEnvironment.GetAbsolutePath` — both discard `OriginalValue`. Also check all `SetMetadata` and `_filesWritten.Add` calls to verify they don't use absolutized variables.
+
+**Affected merge groups**: mg2 (GenerateDepsFile, ResolveAppHosts).
+
+---
+
 ## 2. Reviewer Expectations (Key Reviewers)
 
 ### 2.1 JanProvaznik (Primary Reviewer)
@@ -152,6 +169,9 @@ the `TaskEnvironment` property before assigning it.
 | **No attribute-verification tests** | "I think this kind of test is not required" |
 | **Use `AbsolutePath` constructor for path combining** | `new AbsolutePath(path, absProjectDir)` |
 | **Behavioral tests over structural tests** | Test actual task output, not interface shape |
+| **Keep `AbsolutePath` objects — don't cast to string** | Absolutize inside the method doing I/O, not in ExecuteCore |
+| **Use `OriginalValue` for outputs** | Output metadata and FilesWritten must preserve original path form |
+| **No absolutization outside the consuming method** | "There is no reason to compute absolute paths outside this function" |
 
 ### 2.3 copilot-pull-request-reviewer (Automated)
 
@@ -253,6 +273,7 @@ Run this checklist before pushing any merge group fix:
 - [ ] **Explanatory comments** on properties that are intentionally NOT absolutized
 - [ ] **`UseShellExecute = false`** in any `ProcessStartInfo` under NETFRAMEWORK
 - [ ] **Injection completeness verified** — if any class was refactored to accept delegates/interfaces, verify every method uses them (no leaked static calls to `Environment.*`, no library bypasses like `DotNetReferenceAssembliesPathResolver.Resolve()`)
+- [ ] **No absolutization leak to outputs** — verify no `(string)TaskEnvironment.GetAbsolutePath(...)` casts; check all SetMetadata/FilesWritten calls use original properties, not absolutized variables
 
 ---
 
