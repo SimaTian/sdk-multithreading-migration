@@ -1,102 +1,116 @@
-# Skill: Stress Testing Multithreaded Task Migrations
+# Skill: Concurrency Testing for Multithreaded Task Migrations
 
 ## Purpose
 
-After migrating a task to `IMultiThreadableTask`, run stress tests to verify the migration is correct under concurrent execution. These tests are exploratory — not committed to the SDK repo — but are essential for validating that path resolution, instance state, and shared resources are thread-safe.
+After migrating a task to `IMultiThreadableTask`, run concurrency tests to verify the migration is correct under concurrent execution. Two tiers exist (see "Two tiers of concurrency tests" below): a deterministic regression that ships in CI forever, and an exploratory stress suite that is run locally and deleted before commit.
 
-## Important: Stress Tests Are NOT Committed
+This skill defers to [`multithreaded-task-migration.md`](./multithreaded-task-migration.md) for the canonical `TaskEnvironment` property declaration, the test setup conventions (single-assignment factory rule), the `where to absolutize` checklist, and the shared-state/cache audit recipe. It owns concurrency-specific test patterns, the start-gate coordination recipe, and the xUnit collection-isolation rule.
 
-Stress tests are run locally during the migration process to validate thread safety. They are exploratory and must NOT be included in the final committed test suite. After confirming the migration is correct:
-1. Run stress tests locally
-2. Verify they pass
-3. Delete the stress test files before committing
-4. The committed tests should only include behavioral correctness tests
+## Two tiers of concurrency tests: what to commit, what to delete
 
-## Key Findings from ResolvePackageDependencies Migration
+Concurrency testing for a migrated task has two distinct tiers. Conflating them is the single most common review failure on migration PRs.
 
-### 1. TaskEnvironment is always provided — do NOT null-check
+### Tier 1 — Deterministic concurrency regression test (COMMIT)
 
-MSBuild always provides a `TaskEnvironment` instance to tasks implementing `IMultiThreadableTask` — even in single-threaded mode (where it acts as a no-op passthrough). Use `TaskEnvironment` directly without null guards:
+Exactly one focused test per migrated task that:
 
-```csharp
-private string GetAbsolutePathFromProjectRelativePath(string path)
-{
-    AbsolutePath absProjectDir = TaskEnvironment.GetAbsolutePath(Path.GetDirectoryName(ProjectPath));
-    return Path.GetFullPath(Path.Combine(absProjectDir, path));
-}
-```
+- Runs **2–4** instances concurrently (low enough to be fast and stable in CI)
+- Uses **fixed inputs** and **fixed unique project directories**
+- Asserts the **per-instance** resolved outputs (path / metadata / item set)
+- Uses the start-gate pattern with bounded timeouts (see Pattern 1)
+- Belongs to a CWD-safe xUnit `[Collection]` if the task touches CWD/env
 
-**Tests must always set `TaskEnvironment`** — use `TaskEnvironmentHelper.CreateForTest(projectDir)` for every test of a migrated task.
+This test stays in the repo forever. It is the regression guard.
 
-### ~~1b. Defensive ProjectDirectory initialization from BuildEngine~~ — NOT NEEDED
+### Tier 2 — Exploratory stress test (DO NOT COMMIT)
 
-~~Always add `TaskEnvironment.ProjectDirectory` auto-initialization from `BuildEngine.ProjectFileOfTaskNode`.~~
+Runs with N=16/64/256, randomized inputs, optional soak loops. Used during migration to flush out races. After it passes locally:
 
-**CORRECTION**: This guidance was wrong. MSBuild handles `TaskEnvironment` initialization automatically. When MSBuild detects that a task implements `IMultiThreadableTask`, it creates a fully initialized `TaskEnvironment` (with `ProjectDirectory` set from the project file) and assigns it via the property setter before calling `Execute()`. The task only needs `public TaskEnvironment TaskEnvironment { get; set; }` — no self-initialization code. This is confirmed by all Group 1–4 tasks which use simple auto-properties.
+1. Confirm Tier 1 still covers the same code path
+2. **Delete the Tier 2 file before committing**
+3. Note the local pass in the PR description
 
-For **unit tests**, you must set `TaskEnvironment` manually since MSBuild is not involved:
-```csharp
-task.TaskEnvironment = TaskEnvironmentHelper.CreateForTest(projectDir);
-```
+### Applicability gate — Pattern A tasks need no stress test of either tier
 
-### 2. Absolute paths pass through GetAbsolutePath unchanged
+Skip both tiers of concurrency testing if **all** are true:
 
-`TaskEnvironment.GetAbsolutePath()` checks `Path.IsPathRooted()` — if the path is already absolute, it returns it as-is. This means:
-- When `ProjectPath` is absolute (the normal case), `Path.GetDirectoryName(ProjectPath)` is already absolute, so `GetAbsolutePath` is a no-op for path resolution — but it's still required for the contract.
-- The real value of `GetAbsolutePath` shows when `ProjectPath` is relative (edge case but possible).
+- The task does not call `TaskEnvironment.*` anywhere.
+- The task has no instance fields that outlive `Execute()` (no caches, no lazy fields, no `RegisteredTaskObject`).
+- The task only transforms `ITaskItem` metadata in-memory.
 
-### 3. AbsolutePath requires fully-qualified paths (with drive letter on Windows)
+Document the applicability gate in the PR description; **never substitute a reflection-based "attribute is present" test** as a stand-in. Such tests are tautological and consistently rejected by reviewers (see `analyze-and-migrate-template.md` Test Design Rule 1).
 
-The real MSBuild `AbsolutePath` struct (used in net11.0+) validates that paths are fully qualified — not just rooted. On Windows, `\root\foo` is rooted but NOT fully qualified (missing drive letter like `C:\`). This means:
-- Test paths must use `Path.GetFullPath()` to ensure they have a drive letter before passing to `TaskEnvironmentHelper.CreateForTest()`.
-- Synthetic paths like `\root\anypath\...` will throw `ArgumentException: Path must be rooted` from `AbsolutePath` even though `Path.IsPathRooted()` returns true for them.
+## Key Findings
 
-### 3. Instance state is per-task-instance (safe by design)
+### TaskEnvironment is always provided
 
-MSBuild creates a **new task instance per execution**. Fields like `_fileTypes`, `_packageDefinitions`, `_lockFile`, etc. are instance fields — they don't cross-contaminate between threads because each thread gets its own instance. No locking needed.
+With the canonical `public TaskEnvironment TaskEnvironment { get; set; } = TaskEnvironment.Fallback;` initializer (cross-ref [`multithreaded-task-migration.md` § Canonical TaskEnvironment property](./multithreaded-task-migration.md#canonical-taskenvironment-property)), the property is never null at runtime. Use it directly without null guards. **Tests must always set `TaskEnvironment`** to a `TaskEnvironmentHelper.CreateForTest(projectDir)` instance so they exercise the real codepath rather than the CWD-based passthrough.
 
-### 4. Shared objects (LockFile, LockFileCache) are read-only after creation
+### Absolute paths pass through GetAbsolutePath unchanged
 
-`LockFileCache` uses MSBuild's `RegisteredTaskObject` system to share parsed lock files across task instances. The `LockFile` object is immutable after parsing, so sharing it is safe. Similarly, `NuGetPackageResolver` is read-only after construction.
+`TaskEnvironment.GetAbsolutePath()` checks `Path.IsPathRooted()` — if the path is already absolute, it returns it as-is. The real value of `GetAbsolutePath` shows when the input is relative.
 
-### 5. The `ref _projectFileDependencies` pattern is safe
+### AbsolutePath requires fully-qualified paths
 
-`IsTransitiveProjectReference` takes `ref HashSet<string> directProjectDependencies` and lazily initializes it. This looks dangerous, but it's safe because:
-- It operates on instance fields (not static)
-- Each task instance runs in a single thread
-- The ref mutation happens within one task's `ExecuteCore()` call
+The real MSBuild `AbsolutePath` struct validates that paths are fully qualified — not just rooted. On Windows, `\root\foo` is rooted but NOT fully qualified (missing drive letter). Test paths must use `Path.GetFullPath()` to ensure they have a drive letter before passing to `TaskEnvironmentHelper.CreateForTest()`.
+
+### Instance state is per-task-instance (safe by design)
+
+MSBuild creates a **new task instance per execution**. Fields are instance fields — they don't cross-contaminate between threads because each thread gets its own instance. No locking needed.
+
+### Shared objects (LockFile, LockFileCache) must be read-only after creation
+
+`LockFileCache` uses MSBuild's `RegisteredTaskObject` system to share parsed lock files across task instances. Sharing is safe only if the shared object is immutable after parsing. (See [`multithreaded-task-migration.md` § Shared State and Cache Audit](./multithreaded-task-migration.md#shared-state-and-cache-audit) for the full audit rules.)
 
 ## Stress Test Patterns
 
 ### Pattern 1: Concurrent execution with distinct project directories
 
-The core test. N task instances run in parallel, each with its own `TaskEnvironment` pointing to a unique project directory. Use a `Barrier` to synchronize start for maximum contention.
+The core test. N task instances run concurrently, each with its own `TaskEnvironment` pointing to a unique project directory. Use a two-gate start pattern (`CountdownEvent` ready-gate + `ManualResetEventSlim` start-gate) so all threads are *known* to be parked at the start line before being released — `Parallel.For` does NOT give you that guarantee.
 
 ```csharp
 [Theory]
 [InlineData(4)]
 [InlineData(16)]
 [InlineData(64)]
-public void ConcurrentExecutionWithDistinctProjectDirs(int parallelism)
+public async Task ConcurrentExecutionWithDistinctProjectDirs(int parallelism)
 {
-    var errors = new ConcurrentBag<string>();
-    var barrier = new Barrier(parallelism);
+    using var ready = new CountdownEvent(parallelism);
+    using var start = new ManualResetEventSlim(false);
+    using var cts   = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+    var errors      = new ConcurrentBag<string>();
 
-    Parallel.For(0, parallelism, new ParallelOptions { MaxDegreeOfParallelism = parallelism }, i =>
+    var tasks = Enumerable.Range(0, parallelism).Select(i => Task.Run(() =>
     {
         var projectDir = CreateUniqueProjectDir(i);
         var task = CreateTaskForProjectDir(projectDir, i);
         task.TaskEnvironment = TaskEnvironmentHelper.CreateForTest(projectDir);
 
-        barrier.SignalAndWait(); // maximize contention
+        ready.Signal();
+        start.Wait(cts.Token);            // every wait has a timeout / CT
 
-        task.Execute();
+        if (!task.Execute())
+            errors.Add($"task {i} failed");
         // Verify resolved paths match expected for THIS project dir
-    });
+    }, cts.Token)).ToArray();
+
+    ready.Wait(cts.Token);                 // all workers parked at the gate
+    start.Set();                           // release them simultaneously
+    await Task.WhenAll(tasks);             // xUnit1031: never .Wait()/.Result
+
+    errors.Should().BeEmpty();
 }
 ```
 
 **What it catches**: Cross-talk between threads via shared mutable state, static fields, or CWD dependency.
+
+### Forbidden coordination patterns
+
+- ❌ `Parallel.For(0, N, ..., i => { barrier.SignalAndWait(); ... })` — `Parallel.For` may run iterations sequentially on a single worker, so `Barrier(N)` deadlocks. Use `Task.Run` per worker instead.
+- ❌ Any untimed `barrier.SignalAndWait()`, `mre.Wait()`, `event.Wait()`, `task.Wait()`, `task.Result`. All waits must take either a `TimeSpan` timeout or a `CancellationToken` from a `CancellationTokenSource` with a bounded `TimeSpan`. Otherwise a regression hangs the test runner instead of failing.
+- ❌ Synchronous `void` test bodies that call `.Wait()` / `.Result` on `Task.WhenAll`. Use `async Task` + `await` (xUnit1031).
+- ❌ Synchronization primitives without `using var` — `CountdownEvent`, `ManualResetEventSlim`, `Barrier`, `CancellationTokenSource` are all `IDisposable`.
+- ❌ Capturing the `Parallel.For` / `for` loop variable inside a closure without copying it to a local first.
 
 ### Pattern 2: Same data, different project directories
 
@@ -123,16 +137,48 @@ Set `ProjectPath` to a relative path like `subdir/myproject.csproj`. This exerci
 
 ### Pattern 6: Edge cases
 
-- **Paths with spaces and special characters** (`My Lib`, `(1)`)
-- **Multiple project references** in the same lock file with different relative paths
-- **Repeated execution** with fresh instances to verify no state accumulation
+- Paths with spaces and special characters (`My Lib`, `(1)`)
+- Multiple project references in the same lock file with different relative paths
+- Repeated execution with fresh instances to verify no state accumulation
 - **CWD stability check**: verify `Directory.GetCurrentDirectory()` is unchanged after task execution
+- **Cross-platform path separators**: build expected paths with `Path.Combine` / `Path.DirectorySeparatorChar`; never hard-code `\` or `/` in assertions. (PR #53119, PR #52937.)
+
+### Pattern 7: Once-per-build guard race-test recipe
+
+For tasks guarded by `Interlocked` / `RegisteredTaskObject` once-per-build gates: race the gate with N concurrent `Execute()` calls; assert the guarded side-effect ran exactly once (e.g., a counter incremented to 1, a log line emitted once). The test should fail if the gate is removed. (PR #53956.)
+
+## Per-thread output assertion (mandatory)
+
+A concurrency test that only catches exceptions is not a concurrency test. Each worker must capture its resolved outputs into a `ConcurrentDictionary<int, ExpectedShape>` keyed by worker index, and the test body must assert *each* entry equals the value computed from *that* worker's inputs. To make cross-talk visible, give each worker a **distinct payload** (different project dir, different lock-file content, different metadata value) — identical payloads cannot detect a swap. (PR #53117, PR #53942, PR #52555.)
+
+## Test isolation for process-wide state
+
+Anything that mutates per-process state — CWD, environment variables, `RegisteredTaskObject` singletons keyed off the process — MUST be serialized. xUnit parallelizes across collections by default, and parallel CWD mutations corrupt sibling tests (on macOS this surfaces as a "directory was deleted" crash; on Windows as bare-filename file load failures).
+
+Define one shared collection per process-wide concern:
+
+```csharp
+[CollectionDefinition("CWD-Dependent", DisableParallelization = true)]
+public class CwdDependentCollection { }
+
+[CollectionDefinition("ProcessEnv-Dependent", DisableParallelization = true)]
+public class ProcessEnvCollection { }
+```
+
+Every test class that mutates CWD or env vars (directly, or via `TaskTestEnvironment` / setup helpers that do) must be tagged:
+
+```csharp
+[Collection("CWD-Dependent")]
+public class MyMigratedTaskTests { ... }
+```
+
+Env-var isolation tests must additionally **set conflicting values in both the process env and the `TaskEnvironment`**, then assert the task read from `TaskEnvironment` — otherwise the test would pass even if the task incorrectly read from the process env.
 
 ## Test Infrastructure
 
 ### Temp directory management
 
-Use `ConcurrentBag<string>` (not `List<string>`) for tracking temp directories in concurrent tests. Clean up in `Dispose()`:
+Use `ConcurrentBag<string>` (not `List<string>`) for tracking temp directories in concurrent tests. Replace bare `catch` with scoped exception handling that logs:
 
 ```csharp
 private readonly ConcurrentBag<string> _tempDirs = new();
@@ -141,10 +187,14 @@ public void Dispose()
 {
     foreach (var dir in _tempDirs)
     {
-        try { Directory.Delete(dir, true); } catch { }
+        try { Directory.Delete(dir, recursive: true); }
+        catch (IOException ex)                 { _output.WriteLine($"temp cleanup: {ex.Message}"); }
+        catch (UnauthorizedAccessException ex) { _output.WriteLine($"temp cleanup: {ex.Message}"); }
     }
 }
 ```
+
+Bare `catch { }` swallows the regression you actually want to see. (PR #53943.)
 
 ### Creating test tasks with project references
 
@@ -157,30 +207,36 @@ string classLibDefn = CreateProjectLibrary("ClassLib/1.0.0",
 string targetLib = CreateTargetLibrary("ClassLib/1.0.0", "project");
 ```
 
+Reference metadata keys via the `MetadataKeys` constants (`MetadataKeys.PackageName`, `MetadataKeys.ParentTarget`, etc.) — never raw strings. A typo in a string literal silently passes the test. (PR #53116.)
+
+Required path properties (`ProjectPath`, `ProjectAssetsFile`, etc.) must be set to non-empty values in fixtures even when not directly under test — many tasks short-circuit on null/empty inputs and the concurrency code path will never run. (PR #53121.)
+
 ### Setting TaskEnvironment on migrated tasks
 
-Since the test must compile against both migrated and unmigrated code, use reflection:
-
-```csharp
-var teProp = task.GetType().GetProperty("TaskEnvironment");
-teProp.Should().NotBeNull("task must have a TaskEnvironment property");
-teProp.SetValue(task, TaskEnvironmentHelper.CreateForTest(projectDir));
-```
-
-Or, if the task already implements `IMultiThreadableTask`, set it directly:
+**Per-task tests that target one already-migrated task** — drop reflection, assign directly:
 
 ```csharp
 task.TaskEnvironment = TaskEnvironmentHelper.CreateForTest(projectDir);
 ```
 
-## Checklist for Stress Testing a Migrated Task
+**Cross-cutting helpers that run against mixed migrated/un-migrated tasks** — reflection remains transitional only as long as un-migrated targets exist; delete the reflection block once all targets in scope are migrated:
 
+```csharp
+// transitional only — remove once every target task implements IMultiThreadableTask
+var teProp = task.GetType().GetProperty("TaskEnvironment");
+teProp?.SetValue(task, TaskEnvironmentHelper.CreateForTest(projectDir));
+```
+
+**Single-assignment factory rule (always applies).** If a shared test factory constructs and pre-configures the task, assign `TaskEnvironment` ONCE — either in the factory OR at the call site, never both. Double-assignment masks bugs where per-test customization is silently overwritten. Cross-ref [`multithreaded-task-migration.md` § Test setup conventions](./multithreaded-task-migration.md#test-setup-conventions-canonical-home).
+
+## Checklist for Concurrency-Testing a Migrated Task
+
+- [ ] Confirm the task is NOT in the Pattern A applicability gate above
 - [ ] Identify which method(s) use `TaskEnvironment` (the migrated forbidden API calls)
-- [ ] Identify what input properties trigger those code paths (e.g., project-type libraries for `ResolvePackageDependencies`)
-- [ ] Write concurrent execution test with `Parallel.For` + `Barrier`
-- [ ] Write same-data-different-dirs test to prove path isolation
-- [ ] Write concurrent test where all tasks have `TaskEnvironment` set (mimicking real MSBuild)
-- [ ] Write relative `ProjectPath` (or equivalent input) test
+- [ ] Identify what input properties trigger those code paths
+- [ ] Write Tier 1 deterministic test (2–4 instances, fixed inputs, per-instance assertions, start-gate with timeouts, `[Collection]` if CWD/env mutating)
+- [ ] Write Tier 2 stress tests locally (high N, randomized inputs); confirm they pass; **delete before commit**
 - [ ] Verify CWD is not modified during execution
-- [ ] Run with high parallelism (64+ threads) to surface race conditions
-- [ ] All stress tests should pass — then delete them (not for commit)
+- [ ] Use `Path.Combine`/`Path.DirectorySeparatorChar` in expected values; never hard-code separators
+- [ ] All required path properties non-empty in fixtures
+- [ ] All test files use `MetadataKeys.*` constants, not string literals
